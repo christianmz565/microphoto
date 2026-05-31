@@ -1,0 +1,17 @@
+provider:
+  name: cloudflare
+
+domainFilters:
+  - ynoacamino.me
+  - enderhost.online
+
+txtOwnerId: kubernetes-cluster
+
+policy: sync
+
+env:
+  - name: CF_API_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: external-dns-secrets
+        key: api-token

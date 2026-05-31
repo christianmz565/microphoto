@@ -1,0 +1,3 @@
+secret:
+  create: false
+  existingSecret: kite-secrets
