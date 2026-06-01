@@ -24,12 +24,14 @@ const (
 	BucketName          = "microphoto"
 )
 
+// Orchestrator coordinates the image processing tasks by splitting images into subtasks and managing their lifecycle.
 type Orchestrator struct {
 	redis   *redis.Client
 	minio   *minio.Client
 	metrics *metrics.Metrics
 }
 
+// NewOrchestrator creates a new Orchestrator instance.
 func NewOrchestrator(r *redis.Client, m *minio.Client, mt *metrics.Metrics) *Orchestrator {
 	return &Orchestrator{
 		redis:   r,
@@ -38,6 +40,7 @@ func NewOrchestrator(r *redis.Client, m *minio.Client, mt *metrics.Metrics) *Orc
 	}
 }
 
+// ProcessImage handles the initial image upload, calculates subtask regions, and pushes tasks to Redis.
 func (o *Orchestrator) ProcessImage(ctx context.Context, file io.ReadSeeker, filename string, jobType jobs.JobType, size int64) (string, error) {
 	startTime := time.Now()
 	taskID := uuid.New().String()
@@ -97,9 +100,15 @@ func (o *Orchestrator) ProcessImage(ctx context.Context, file io.ReadSeeker, fil
 			},
 			Attempts:  DefaultAttempts,
 			CreatedAt: time.Now().Unix(),
+			Parameters: map[string]string{
+				"index":           fmt.Sprintf("%d", i),
+				"total_subtasks":  fmt.Sprintf("%d", N),
+				"original_width":  fmt.Sprintf("%d", W),
+				"original_height": fmt.Sprintf("%d", H),
+			},
 		}
 
-		err = o.redis.PushTask(ctx, taskID, job)
+		err = o.redis.PushTask(ctx, "tasks", job)
 		if err != nil {
 			return "", fmt.Errorf("push task: %w", err)
 		}

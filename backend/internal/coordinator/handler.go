@@ -10,12 +10,14 @@ import (
 	"github.com/christianmz565/microphoto/proto/jobs"
 )
 
+// HTTPHandler manages the HTTP API for the coordinator.
 type HTTPHandler struct {
 	orchestrator  *Orchestrator
 	metrics       *metrics.Metrics
 	maxUploadSize int64
 }
 
+// NewHTTPHandler creates a new HTTPHandler instance.
 func NewHTTPHandler(orch *Orchestrator, m *metrics.Metrics, maxUploadSize int64) *HTTPHandler {
 	return &HTTPHandler{
 		orchestrator:  orch,
@@ -24,16 +26,19 @@ func NewHTTPHandler(orch *Orchestrator, m *metrics.Metrics, maxUploadSize int64)
 	}
 }
 
+// RegisterRoutes registers the HTTP routes with the provided mux.
 func (h *HTTPHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", h.HealthCheck)
 	mux.HandleFunc("/api/v1/process", h.ProcessImage)
 }
 
+// HealthCheck provides a simple health check endpoint.
 func (h *HTTPHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }
 
+// ProcessImage handles the multipart form upload of an image for processing.
 func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -74,6 +79,7 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// parseJobType converts a string representation of a job type to the corresponding protobuf enum.
 func parseJobType(s string) jobs.JobType {
 	switch s {
 	case "RESIZE":

@@ -15,11 +15,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize metrics: %v", err)
 	}
-	_ = m // Use metrics later
+	_ = m
 
 	metrics.StartMetricsServer(9091)
 
-	// Reaper loop
 	for {
 		fmt.Println("Reaper checking for stale jobs...")
 		time.Sleep(30 * time.Second)
