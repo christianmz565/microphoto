@@ -63,7 +63,7 @@ func main() {
 			log.Println("Worker shutting down gracefully")
 			return
 		default:
-			job, rawData, err := rClient.PopTaskReliable(ctx, "tasks")
+			job, rawData, err := rClient.PopTaskReliable(ctx, workerID)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
@@ -79,7 +79,7 @@ func main() {
 				continue
 			}
 
-			if err := rClient.CompleteTask(ctx, "tasks", rawData); err != nil {
+			if err := rClient.CompleteTask(ctx, workerID, rawData); err != nil {
 				log.Printf("Error completing task %s: %v", job.Id, err)
 			}
 

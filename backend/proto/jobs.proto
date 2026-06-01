@@ -10,6 +10,7 @@ enum JobType {
     GRAYSCALE = 2;
     BLUR = 3;
     RECONSTRUCT = 4;
+    SLICE = 5;
 }
 
 enum JobStatus {

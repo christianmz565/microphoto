@@ -29,6 +29,7 @@ const (
 	JobType_GRAYSCALE    JobType = 2
 	JobType_BLUR         JobType = 3
 	JobType_RECONSTRUCT  JobType = 4
+	JobType_SLICE        JobType = 5
 )
 
 // Enum value maps for JobType.
@@ -39,6 +40,7 @@ var (
 		2: "GRAYSCALE",
 		3: "BLUR",
 		4: "RECONSTRUCT",
+		5: "SLICE",
 	}
 	JobType_value = map[string]int32{
 		"UNKNOWN_TYPE": 0,
@@ -46,6 +48,7 @@ var (
 		"GRAYSCALE":    2,
 		"BLUR":         3,
 		"RECONSTRUCT":  4,
+		"SLICE":        5,
 	}
 )
 
@@ -349,14 +352,15 @@ const file_jobs_proto_rawDesc = "" +
 	"\ttimestamp\x18\v \x01(\x03R\ttimestamp\x1a=\n" +
 	"\x0fParametersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*Q\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\\\n" +
 	"\aJobType\x12\x10\n" +
 	"\fUNKNOWN_TYPE\x10\x00\x12\n" +
 	"\n" +
 	"\x06RESIZE\x10\x01\x12\r\n" +
 	"\tGRAYSCALE\x10\x02\x12\b\n" +
 	"\x04BLUR\x10\x03\x12\x0f\n" +
-	"\vRECONSTRUCT\x10\x04*D\n" +
+	"\vRECONSTRUCT\x10\x04\x12\t\n" +
+	"\x05SLICE\x10\x05*D\n" +
 	"\tJobStatus\x12\v\n" +
 	"\aPENDING\x10\x00\x12\x0f\n" +
 	"\vIN_PROGRESS\x10\x01\x12\r\n" +

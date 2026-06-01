@@ -11,6 +11,7 @@ import (
 	"image/png"
 	_ "image/png"
 	"log"
+	"math"
 	"strconv"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/christianmz565/microphoto/pkg/client/redis"
 	"github.com/christianmz565/microphoto/pkg/model"
 	"github.com/christianmz565/microphoto/proto/jobs"
+	"github.com/google/uuid"
 )
 
 const (
@@ -52,11 +54,116 @@ func (p *Processor) HandleJob(ctx context.Context, job *jobs.Job) error {
 	}()
 
 	switch job.Type {
+	case jobs.JobType_SLICE:
+		return p.handleSlice(ctx, job)
 	case jobs.JobType_RECONSTRUCT:
 		return p.handleReconstruct(ctx, job)
 	default:
 		return p.handleProcess(ctx, job)
 	}
+}
+
+func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
+	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+		JobID:   job.ParentId,
+		Status:  "START_SLICING",
+		Message: fmt.Sprintf("Worker %s started slicing for task %s", p.workerID, job.ParentId),
+	})
+
+	reader, err := p.minio.DownloadObject(ctx, BucketName, job.OriginalImagePath)
+	if err != nil {
+		return fmt.Errorf("download original: %w", err)
+	}
+	defer reader.Close()
+
+	img, _, err := image.Decode(reader)
+	if err != nil {
+		return fmt.Errorf("decode image: %w", err)
+	}
+
+	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	totalPixels := W * H
+	// Use the same logic as previously in coordinator
+	const MaxPixelsPerSubtask = 1000000
+	const DefaultAttempts = 3
+
+	N := int(math.Ceil(float64(totalPixels) / float64(MaxPixelsPerSubtask)))
+	if N <= 0 {
+		N = 1
+	}
+
+	rowsPerSubtask := H / N
+	if rowsPerSubtask <= 0 {
+		rowsPerSubtask = 1
+		N = H
+	}
+
+	var subtasks []*jobs.Job
+	targetType := jobs.JobType(jobs.JobType_value[job.Parameters["target_type"]])
+
+	for i := 0; i < N; i++ {
+		startY := i * rowsPerSubtask
+		endY := (i + 1) * rowsPerSubtask
+		if i == N-1 {
+			endY = H
+		}
+
+		rect := image.Rect(0, startY, W, endY)
+		subImg := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
+		draw.Draw(subImg, subImg.Bounds(), img, rect.Min, draw.Src)
+
+		fragmentPath := fmt.Sprintf("%s/sub_%d.png", job.ParentId, i)
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, subImg); err != nil {
+			return fmt.Errorf("encode fragment %d: %w", i, err)
+		}
+
+		_, err = p.minio.UploadObject(ctx, BucketName, fragmentPath, &buf, int64(buf.Len()), "image/png")
+		if err != nil {
+			return fmt.Errorf("upload fragment %d: %w", i, err)
+		}
+
+		subJobID := uuid.New().String()
+		subJob := &jobs.Job{
+			Id:                subJobID,
+			Type:              targetType,
+			Status:            jobs.JobStatus_PENDING,
+			OriginalImagePath: fragmentPath, // Now points to the fragment
+			ParentId:          job.ParentId,
+			Region: &jobs.Region{
+				X:      0,
+				Y:      0, // Fragment-relative
+				Width:  int32(W),
+				Height: int32(endY - startY),
+			},
+			Attempts:  DefaultAttempts,
+			CreatedAt: time.Now().Unix(),
+			Timestamp: time.Now().Unix(),
+			Parameters: map[string]string{
+				"index":           fmt.Sprintf("%d", i),
+				"total_subtasks":  fmt.Sprintf("%d", N),
+				"original_width":  fmt.Sprintf("%d", W),
+				"original_height": fmt.Sprintf("%d", H),
+			},
+		}
+		subtasks = append(subtasks, subJob)
+	}
+
+	if err := p.redis.InitializeTask(ctx, job.ParentId, N, DefaultAttempts); err != nil {
+		return fmt.Errorf("initialize redis task: %w", err)
+	}
+
+	if err := p.redis.PushTasksPipeline(ctx, subtasks); err != nil {
+		return fmt.Errorf("push subtasks: %w", err)
+	}
+
+	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+		JobID:   job.ParentId,
+		Status:  "END_SLICING",
+		Message: fmt.Sprintf("Worker %s finished slicing for task %s", p.workerID, job.ParentId),
+	})
+
+	return nil
 }
 
 func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
@@ -134,7 +241,7 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 			Parameters:        job.Parameters,
 		}
 
-		err = p.redis.PushTask(ctx, "tasks", reconstructJob)
+		err = p.redis.PushTask(ctx, reconstructJob)
 		if err != nil {
 			return fmt.Errorf("push reconstruct task: %w", err)
 		}

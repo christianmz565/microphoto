@@ -27,21 +27,42 @@ func NewClient(addr string) (*Client, error) {
 	return &Client{rdb: rdb}, nil
 }
 
-// PushTask serializes a job to Protobuf and pushes it to {taskID}:queue
-func (c *Client) PushTask(ctx context.Context, taskID string, job *jobs.Job) error {
+// PushTask serializes a job to Protobuf and pushes it to {"global"}:queue
+func (c *Client) PushTask(ctx context.Context, job *jobs.Job) error {
 	data, err := proto.Marshal(job)
 	if err != nil {
 		return fmt.Errorf("marshal job: %w", err)
 	}
 
-	queueKey := fmt.Sprintf("{%s}:queue", taskID)
+	queueKey := `{"global"}:queue`
 	return c.rdb.LPush(ctx, queueKey, data).Err()
 }
 
-// PopTaskReliable moves a task from {taskID}:queue to {taskID}:in_progress using BLMOVE
+// PushTasksPipeline serializes multiple jobs to Protobuf and pushes them to {"global"}:queue in a pipeline
+func (c *Client) PushTasksPipeline(ctx context.Context, jobs []*jobs.Job) error {
+	pipe := c.rdb.Pipeline()
+	queueKey := `{"global"}:queue`
+
+	for _, job := range jobs {
+		data, err := proto.Marshal(job)
+		if err != nil {
+			return fmt.Errorf("marshal job %s: %w", job.Id, err)
+		}
+		pipe.LPush(ctx, queueKey, data)
+	}
+
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("pipeline exec: %w", err)
+	}
+
+	return nil
+}
+
+// PopTaskReliable moves a task from {"global"}:queue to {"global"}:in_progress:{taskID} using BLMOVE
 func (c *Client) PopTaskReliable(ctx context.Context, taskID string) (*jobs.Job, []byte, error) {
-	queueKey := fmt.Sprintf("{%s}:queue", taskID)
-	progressKey := fmt.Sprintf("{%s}:in_progress", taskID)
+	queueKey := `{"global"}:queue`
+	progressKey := fmt.Sprintf(`{"global"}:in_progress:%s`, taskID)
 
 	data, err := c.rdb.BLMove(ctx, queueKey, progressKey, "RIGHT", "LEFT", 0).Result()
 	if err != nil {
@@ -56,27 +77,27 @@ func (c *Client) PopTaskReliable(ctx context.Context, taskID string) (*jobs.Job,
 	return job, []byte(data), nil
 }
 
-// DecrementCounter decrements the {taskID}:subtasks counter
+// DecrementCounter decrements the {"global"}:subtasks:{taskID} counter
 func (c *Client) DecrementCounter(ctx context.Context, taskID string) (int64, error) {
-	counterKey := fmt.Sprintf("{%s}:subtasks", taskID)
+	counterKey := fmt.Sprintf(`{"global"}:subtasks:%s`, taskID)
 	return c.rdb.Decr(ctx, counterKey).Result()
 }
 
-// PublishProgress serializes progress to JSON and publishes it to the {taskID} channel
+// PublishProgress serializes progress to JSON and publishes it to the {"global"}:progress:{taskID} channel
 func (c *Client) PublishProgress(ctx context.Context, taskID string, payload model.ProgressPayload) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal progress: %w", err)
 	}
 
-	channel := fmt.Sprintf("{%s}", taskID)
+	channel := fmt.Sprintf(`{"global"}:progress:%s`, taskID)
 	return c.rdb.Publish(ctx, channel, data).Err()
 }
 
-// InitializeTask sets the {taskID}:subtasks and {taskID}:attempts counters
+// InitializeTask sets the {"global"}:subtasks:{taskID} and {"global"}:attempts:{taskID} counters
 func (c *Client) InitializeTask(ctx context.Context, taskID string, subtasks int, attempts int) error {
-	subtasksKey := fmt.Sprintf("{%s}:subtasks", taskID)
-	attemptsKey := fmt.Sprintf("{%s}:attempts", taskID)
+	subtasksKey := fmt.Sprintf(`{"global"}:subtasks:%s`, taskID)
+	attemptsKey := fmt.Sprintf(`{"global"}:attempts:%s`, taskID)
 
 	pipe := c.rdb.Pipeline()
 	pipe.Set(ctx, subtasksKey, subtasks, 0)
@@ -122,9 +143,9 @@ func (c *Client) GetListItems(ctx context.Context, key string) ([][]byte, error)
 	return result, nil
 }
 
-// GetAttempts returns the value of {taskID}:attempts
+// GetAttempts returns the value of {"global"}:attempts:{taskID}
 func (c *Client) GetAttempts(ctx context.Context, taskID string) (int, error) {
-	key := fmt.Sprintf("{%s}:attempts", taskID)
+	key := fmt.Sprintf(`{"global"}:attempts:%s`, taskID)
 	val, err := c.rdb.Get(ctx, key).Int()
 	if err != nil {
 		return 0, err
@@ -133,10 +154,10 @@ func (c *Client) GetAttempts(ctx context.Context, taskID string) (int, error) {
 }
 
 // RescheduleTask moves a task from in_progress back to queue atomically
-func (c *Client) RescheduleTask(ctx context.Context, taskID string, oldData []byte, newData []byte) error {
-	progressKey := fmt.Sprintf("{%s}:in_progress", taskID)
-	queueKey := fmt.Sprintf("{%s}:queue", taskID)
-	attemptsKey := fmt.Sprintf("{%s}:attempts", taskID)
+func (c *Client) RescheduleTask(ctx context.Context, progressID string, taskID string, oldData []byte, newData []byte) error {
+	progressKey := fmt.Sprintf(`{"global"}:in_progress:%s`, progressID)
+	queueKey := `{"global"}:queue`
+	attemptsKey := fmt.Sprintf(`{"global"}:attempts:%s`, taskID)
 
 	_, err := c.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 		pipe.Decr(ctx, attemptsKey)
@@ -149,10 +170,10 @@ func (c *Client) RescheduleTask(ctx context.Context, taskID string, oldData []by
 }
 
 // CleanupFailedTask removes a task from in_progress and deletes metadata
-func (c *Client) CleanupFailedTask(ctx context.Context, taskID string, data []byte) error {
-	progressKey := fmt.Sprintf("{%s}:in_progress", taskID)
-	subtasksKey := fmt.Sprintf("{%s}:subtasks", taskID)
-	attemptsKey := fmt.Sprintf("{%s}:attempts", taskID)
+func (c *Client) CleanupFailedTask(ctx context.Context, progressID string, taskID string, data []byte) error {
+	progressKey := fmt.Sprintf(`{"global"}:in_progress:%s`, progressID)
+	subtasksKey := fmt.Sprintf(`{"global"}:subtasks:%s`, taskID)
+	attemptsKey := fmt.Sprintf(`{"global"}:attempts:%s`, taskID)
 
 	_, err := c.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 		pipe.LRem(ctx, progressKey, 1, data)
@@ -165,7 +186,7 @@ func (c *Client) CleanupFailedTask(ctx context.Context, taskID string, data []by
 }
 
 // CompleteTask removes a task from the in_progress list after successful processing
-func (c *Client) CompleteTask(ctx context.Context, taskID string, data []byte) error {
-	progressKey := fmt.Sprintf("{%s}:in_progress", taskID)
+func (c *Client) CompleteTask(ctx context.Context, progressID string, data []byte) error {
+	progressKey := fmt.Sprintf(`{"global"}:in_progress:%s`, progressID)
 	return c.rdb.LRem(ctx, progressKey, 1, data).Err()
 }

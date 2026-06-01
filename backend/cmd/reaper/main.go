@@ -60,15 +60,15 @@ func main() {
 }
 
 func runReaperCycle(ctx context.Context, rClient *redis.Client, m *metrics.Metrics, cfg *reaper.Config, hostname string) {
-	keys, err := rClient.ScanInProgressKeys(ctx, "*{*:in_progress}")
+	keys, err := rClient.ScanInProgressKeys(ctx, `{"global"}:in_progress:*`)
 	if err != nil {
 		log.Printf("Error scanning keys: %v", err)
 		return
 	}
 
 	for _, key := range keys {
-		taskID := extractTaskID(key)
-		if taskID == "" {
+		progressID := extractProgressID(key)
+		if progressID == "" {
 			continue
 		}
 
@@ -87,7 +87,11 @@ func runReaperCycle(ctx context.Context, rClient *redis.Client, m *metrics.Metri
 
 			now := time.Now().Unix()
 			if now-job.Timestamp > cfg.GlobalTimeoutSeconds {
-				log.Printf("Detected timeout for job %s (task %s)", job.Id, taskID)
+				taskID := job.ParentId
+				if taskID == "" {
+					taskID = job.Id // fallback for jobs without parent
+				}
+				log.Printf("Detected timeout for job %s (task %s, worker %s)", job.Id, taskID, progressID)
 
 				attempts, err := rClient.GetAttempts(ctx, taskID)
 				if err != nil {
@@ -105,7 +109,7 @@ func runReaperCycle(ctx context.Context, rClient *redis.Client, m *metrics.Metri
 						continue
 					}
 
-					if err := rClient.RescheduleTask(ctx, taskID, item, newData); err != nil {
+					if err := rClient.RescheduleTask(ctx, progressID, taskID, item, newData); err != nil {
 						log.Printf("Error rescheduling task %s: %v", taskID, err)
 						continue
 					}
@@ -114,13 +118,13 @@ func runReaperCycle(ctx context.Context, rClient *redis.Client, m *metrics.Metri
 				} else {
 					log.Printf("Job %s reached max attempts. Failing task %s", job.Id, taskID)
 
-					if err := rClient.CleanupFailedTask(ctx, taskID, item); err != nil {
+					if err := rClient.CleanupFailedTask(ctx, progressID, taskID, item); err != nil {
 						log.Printf("Error cleaning up failed task %s: %v", taskID, err)
 					}
 
 					payload := model.ProgressPayload{
 						JobID:   taskID,
-						Status:  "FAILED",
+						Status:  "JOB_FAILED",
 						Message: "Max retry attempts reached or worker timeout",
 					}
 					if err := rClient.PublishProgress(ctx, taskID, payload); err != nil {
@@ -134,11 +138,10 @@ func runReaperCycle(ctx context.Context, rClient *redis.Client, m *metrics.Metri
 	}
 }
 
-func extractTaskID(key string) string {
-	start := strings.Index(key, "{")
-	end := strings.Index(key, "}")
-	if start != -1 && end != -1 && end > start {
-		return key[start+1 : end]
+func extractProgressID(key string) string {
+	const prefix = `{"global"}:in_progress:`
+	if strings.HasPrefix(key, prefix) {
+		return key[len(prefix):]
 	}
 	return ""
 }

@@ -1,14 +1,17 @@
 package coordinator
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/christianmz565/microphoto/pkg/client/metrics"
 	"github.com/christianmz565/microphoto/proto/jobs"
+	"github.com/google/uuid"
 )
 
 // HTTPHandler manages the HTTP API for the coordinator.
@@ -78,27 +81,44 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Image file is required", http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
+	// We don't defer file.Close() here because we'll read it now and close it after.
 
 	jobTypeStr := r.FormValue("type")
 	jobType := parseJobType(jobTypeStr)
 	if jobType == jobs.JobType_UNKNOWN_TYPE {
+		file.Close()
 		http.Error(w, "Invalid job type", http.StatusBadRequest)
 		return
 	}
 
-	taskID, err := h.orchestrator.ProcessImage(r.Context(), file, header.Filename, jobType, header.Size)
+	// Read the file into memory to release the HTTP connection quickly
+	data, err := io.ReadAll(file)
+	file.Close()
 	if err != nil {
-		log.Printf("Error processing image: %v", err)
-		http.Error(w, fmt.Sprintf("Error processing image: %v", err), http.StatusInternalServerError)
+		http.Error(w, "Failed to read image", http.StatusInternalServerError)
 		return
 	}
 
+	taskID := uuid.New().String()
+
+	// Respond with 202 Accepted immediately
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]string{
 		"task_id": taskID,
 	})
+
+	// Process the rest in a goroutine
+	go func() {
+		// Use a background context as the request context will be cancelled
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		err := h.orchestrator.ProcessImage(ctx, taskID, bytes.NewReader(data), header.Filename, jobType, int64(len(data)))
+		if err != nil {
+			log.Printf("Background processing failed for task %s: %v", taskID, err)
+		}
+	}()
 }
 
 // parseJobType converts a string representation of a job type to the corresponding protobuf enum.
