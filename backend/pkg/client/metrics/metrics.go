@@ -17,8 +17,8 @@ import (
 
 type Metrics struct {
 	TasksProcessed metric.Int64Counter
-	TaskDuration  metric.Float64Histogram
-	TaskTimeouts  metric.Int64Counter
+	TaskDuration   metric.Float64Histogram
+	TaskTimeouts   metric.Int64Counter
 }
 
 func InitMetrics(serviceName string) (*Metrics, error) {
@@ -70,8 +70,8 @@ func InitMetrics(serviceName string) (*Metrics, error) {
 
 	return &Metrics{
 		TasksProcessed: tasksProcessed,
-		TaskDuration:  taskDuration,
-		TaskTimeouts:  taskTimeouts,
+		TaskDuration:   taskDuration,
+		TaskTimeouts:   taskTimeouts,
 	}, nil
 }
 

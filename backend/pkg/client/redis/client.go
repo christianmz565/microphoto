@@ -73,6 +73,23 @@ func (c *Client) PublishProgress(ctx context.Context, taskID string, payload mod
 	return c.rdb.Publish(ctx, channel, data).Err()
 }
 
+// InitializeTask sets the {taskID}:subtasks and {taskID}:attempts counters
+func (c *Client) InitializeTask(ctx context.Context, taskID string, subtasks int, attempts int) error {
+	subtasksKey := fmt.Sprintf("{%s}:subtasks", taskID)
+	attemptsKey := fmt.Sprintf("{%s}:attempts", taskID)
+
+	pipe := c.rdb.Pipeline()
+	pipe.Set(ctx, subtasksKey, subtasks, 0)
+	pipe.Set(ctx, attemptsKey, attempts, 0)
+
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("pipeline exec: %w", err)
+	}
+
+	return nil
+}
+
 // Close closes the redis client
 func (c *Client) Close() error {
 	return c.rdb.Close()
