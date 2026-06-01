@@ -1,0 +1,27 @@
+# Version control
+.git
+.gitignore
+
+# Go artifacts
+bin/
+obj/
+*.test
+*.out
+vendor/
+
+# Environment and secrets
+.env
+.envrc
+
+# IDEs
+.vscode/
+.idea/
+
+# Local/Temporary
+.go/
+.cache/
+
+# Build tools and Docker files
+justfile
+Dockerfile
+.dockerignore

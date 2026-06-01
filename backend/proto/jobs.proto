@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package jobs;
+
+option go_package = "github.com/christianmz565/microphoto/proto/jobs";
+
+enum JobType {
+    UNKNOWN_TYPE = 0;
+    RESIZE = 1;
+    GRAYSCALE = 2;
+    BLUR = 3;
+    RECONSTRUCT = 4;
+}
+
+enum JobStatus {
+    PENDING = 0;
+    IN_PROGRESS = 1;
+    COMPLETED = 2;
+    FAILED = 3;
+}
+
+message Region {
+    int32 x = 1;
+    int32 y = 2;
+    int32 width = 3;
+    int32 height = 4;
+}
+
+message Job {
+    string id = 1;
+    JobType type = 2;
+    JobStatus status = 3;
+    string original_image_path = 4;
+    string result_image_path = 5;
+    string parent_id = 6;
+    Region region = 7;
+    int32 attempts = 8;
+    int64 created_at = 9;
+    map<string, string> parameters = 10;
+}

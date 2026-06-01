@@ -1,0 +1,36 @@
+set shell := ["bash", "-c"]
+
+DOCKER_IMAGE_BASE := "microphoto"
+VERSION := `git rev-parse --short HEAD 2>/dev/null || echo "latest"`
+BIN_DIR := "./bin"
+
+default:
+    @just --list
+
+proto:
+    protoc --proto_path=proto \
+           --go_out=. \
+           --go_opt=module=github.com/christianmz565/microphoto \
+           proto/jobs.proto
+
+build:
+    mkdir -p {{BIN_DIR}}
+    go build -o {{BIN_DIR}}/coordinator ./cmd/coordinator
+    go build -o {{BIN_DIR}}/reaper ./cmd/reaper
+    go build -o {{BIN_DIR}}/worker ./cmd/worker
+
+build-service service:
+    mkdir -p {{BIN_DIR}}
+    go build -o {{BIN_DIR}}/{{service}} ./cmd/{{service}}
+
+docker-all tag=VERSION:
+    just docker coordinator {{tag}}
+    just docker reaper {{tag}}
+    just docker worker {{tag}}
+
+docker service tag=VERSION:
+    docker build --target {{service}} -t {{DOCKER_IMAGE_BASE}}-{{service}}:{{tag}} .
+
+clean:
+    rm -rf {{BIN_DIR}}
+    find proto -name "*.pb.go" -delete

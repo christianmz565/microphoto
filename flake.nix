@@ -41,8 +41,11 @@
             gopls
             gotools
             golangci-lint
+            protobuf
 
             bun
+
+            just
           ];
 
           buildInputs = [ pkgs.bashInteractive ];
