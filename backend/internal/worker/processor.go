@@ -9,6 +9,7 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	"image/png"
+	"io"
 	"log"
 	"maps"
 	"math"
@@ -21,6 +22,7 @@ import (
 	"github.com/christianmz565/microphoto/pkg/model"
 	jobs "github.com/christianmz565/microphoto/proto/jobs/v1"
 	"github.com/google/uuid"
+	"github.com/h2non/bimg"
 )
 
 const (
@@ -76,12 +78,17 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 	}
 	defer reader.Close()
 
-	img, _, err := image.Decode(reader)
+	buf, err := io.ReadAll(reader)
 	if err != nil {
-		return fmt.Errorf("decode image: %w", err)
+		return fmt.Errorf("read image: %w", err)
 	}
 
-	W, H := img.Bounds().Dx(), img.Bounds().Dy()
+	metadata, err := bimg.Metadata(buf)
+	if err != nil {
+		return fmt.Errorf("get image metadata: %w", err)
+	}
+
+	W, H := metadata.Size.Width, metadata.Size.Height
 	totalPixels := W * H
 	const MaxPixelsPerSubtask = 1000000
 	const DefaultAttempts = 3
@@ -100,12 +107,12 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 	var subtasks []*jobs.Job
 	targetType := jobs.JobType(jobs.JobType_value[job.Parameters["target_type"]])
 
-	radius := 0
+	radius := 0.0
 	if targetType == jobs.JobType_JOB_TYPE_BLUR {
-		if r, err := strconv.Atoi(job.Parameters["radius"]); err == nil {
+		if r, err := strconv.ParseFloat(job.Parameters["radius"], 64); err == nil {
 			radius = r
 		} else {
-			radius = 1
+			radius = 1.0
 		}
 	}
 
@@ -126,32 +133,30 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 			paddingTop := 0
 			paddingBottom := 0
 			if radius > 0 {
+				rInt := int(math.Ceil(radius))
 				if startY > 0 {
-					paddingTop = radius
+					paddingTop = rInt
 					if startY-paddingTop < 0 {
 						paddingTop = startY
 					}
 				}
 				if endY < H {
-					paddingBottom = radius
+					paddingBottom = rInt
 					if endY+paddingBottom > H {
 						paddingBottom = H - endY
 					}
 				}
 			}
 
-			rect := image.Rect(0, startY-paddingTop, W, endY+paddingBottom)
-			subImg := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
-			draw.Draw(subImg, subImg.Bounds(), img, rect.Min, draw.Src)
-
-			fragmentPath := fmt.Sprintf("%s/sub_%d.png", job.ParentId, i)
-			var buf bytes.Buffer
-			if err := png.Encode(&buf, subImg); err != nil {
-				resChan <- subTaskResult{err: fmt.Errorf("encode fragment %d: %w", i, err)}
+			fragmentHeight := (endY + paddingBottom) - (startY - paddingTop)
+			fragmentBuf, err := ExtractRegion(buf, 0, startY-paddingTop, W, fragmentHeight)
+			if err != nil {
+				resChan <- subTaskResult{err: fmt.Errorf("extract fragment %d: %w", i, err)}
 				return
 			}
 
-			_, err = p.minio.UploadObject(ctx, BucketName, fragmentPath, &buf, int64(buf.Len()), "image/png")
+			fragmentPath := fmt.Sprintf("%s/sub_%d.png", job.ParentId, i)
+			_, err = p.minio.UploadObject(ctx, BucketName, fragmentPath, bytes.NewReader(fragmentBuf), int64(len(fragmentBuf)), "image/png")
 			if err != nil {
 				resChan <- subTaskResult{err: fmt.Errorf("upload fragment %d: %w", i, err)}
 				return
@@ -177,7 +182,7 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 					X:      0,
 					Y:      0,
 					Width:  int32(W),
-					Height: int32(rect.Dy()),
+					Height: int32(fragmentHeight),
 				},
 				Attempts:   DefaultAttempts,
 				CreatedAt:  time.Now().Unix(),
@@ -226,37 +231,27 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 	}
 	defer reader.Close()
 
-	img, _, err := image.Decode(reader)
+	buf, err := io.ReadAll(reader)
 	if err != nil {
-		return fmt.Errorf("decode image: %w", err)
+		return fmt.Errorf("read fragment: %w", err)
 	}
 
-	rect := image.Rect(
-		int(job.Region.X),
-		int(job.Region.Y),
-		int(job.Region.X+job.Region.Width),
-		int(job.Region.Y+job.Region.Height),
-	)
-
-	subImg := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
-	draw.Draw(subImg, subImg.Bounds(), img, rect.Min, draw.Src)
-
-	var processed image.Image
+	var processed []byte
 	switch job.Type {
 	case jobs.JobType_JOB_TYPE_GRAYSCALE:
-		processed = ApplyGrayscale(subImg)
+		processed, err = ApplyGrayscale(buf)
 	case jobs.JobType_JOB_TYPE_BLUR:
-		radius := 1
-		if r, err := strconv.Atoi(job.Parameters["radius"]); err == nil {
+		radius := 1.0
+		if r, err := strconv.ParseFloat(job.Parameters["radius"], 64); err == nil {
 			radius = r
 		}
-		processed = ApplyBlur(subImg, radius)
+		processed, err = ApplyBlur(buf, radius)
 	case jobs.JobType_JOB_TYPE_BRIGHTNESS:
 		factor := 1.0
 		if f, err := strconv.ParseFloat(job.Parameters["factor"], 64); err == nil {
 			factor = f
 		}
-		processed = ApplyBrightness(subImg, factor)
+		processed, err = ApplyBrightness(buf, factor)
 	case jobs.JobType_JOB_TYPE_RESIZE:
 		targetWidth, _ := strconv.Atoi(job.Parameters["width"])
 		targetHeight, _ := strconv.Atoi(job.Parameters["height"])
@@ -265,24 +260,32 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 
 		if originalHeight > 0 && originalWidth > 0 && targetHeight > 0 && targetWidth > 0 {
 			scaleY := float64(targetHeight) / float64(originalHeight)
-			newFragHeight := int(float64(rect.Dy()) * scaleY)
+			newFragHeight := int(float64(job.Region.Height) * scaleY)
 
 			scaleX := float64(targetWidth) / float64(originalWidth)
-			newFragWidth := int(float64(rect.Dx()) * scaleX)
+			newFragWidth := int(float64(job.Region.Width) * scaleX)
 
-			processed = ApplyResize(subImg, newFragWidth, newFragHeight)
+			processed, err = ApplyResize(buf, newFragWidth, newFragHeight)
 		} else {
-			processed = subImg
+			processed = buf
 		}
 	default:
-		processed = subImg
+		processed = buf
+	}
+
+	if err != nil {
+		return fmt.Errorf("apply filter: %w", err)
 	}
 
 	paddingTop, _ := strconv.Atoi(job.Parameters["padding_top"])
 	paddingBottom, _ := strconv.Atoi(job.Parameters["padding_bottom"])
 
 	if paddingTop > 0 || paddingBottom > 0 {
-		bounds := processed.Bounds()
+		metadata, err := bimg.Metadata(processed)
+		if err != nil {
+			return fmt.Errorf("get processed metadata: %w", err)
+		}
+
 		if job.Type == jobs.JobType_JOB_TYPE_RESIZE {
 			originalHeight, _ := strconv.Atoi(job.Parameters["original_height"])
 			targetHeight, _ := strconv.Atoi(job.Parameters["height"])
@@ -291,21 +294,20 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 			paddingBottom = int(float64(paddingBottom) * scaleY)
 		}
 
-		cropRect := image.Rect(0, paddingTop, bounds.Dx(), bounds.Dy()-paddingBottom)
-		croppedImg := image.NewRGBA(image.Rect(0, 0, cropRect.Dx(), cropRect.Dy()))
-		draw.Draw(croppedImg, croppedImg.Bounds(), processed, cropRect.Min, draw.Src)
-		processed = croppedImg
+		cropY := paddingTop
+		cropHeight := metadata.Size.Height - paddingTop - paddingBottom
+		if cropHeight > 0 {
+			processed, err = ExtractRegion(processed, 0, cropY, metadata.Size.Width, cropHeight)
+			if err != nil {
+				return fmt.Errorf("crop padding: %w", err)
+			}
+		}
 	}
 
 	index := job.Parameters["index"]
 	resultPath := fmt.Sprintf("%s/res_sub_%s.png", job.ParentId, index)
 
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, processed); err != nil {
-		return fmt.Errorf("encode png: %w", err)
-	}
-
-	_, err = p.minio.UploadObject(ctx, BucketName, resultPath, &buf, int64(buf.Len()), "image/png")
+	_, err = p.minio.UploadObject(ctx, BucketName, resultPath, bytes.NewReader(processed), int64(len(processed)), "image/png")
 	if err != nil {
 		return fmt.Errorf("upload processed subtask: %w", err)
 	}

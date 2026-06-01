@@ -2,7 +2,7 @@ FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache git
+RUN apk add --no-cache git vips-dev gcc musl-dev
 COPY go.mod go.sum ./
 RUN go mod download
 
@@ -10,10 +10,10 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/coordinator ./cmd/coordinator
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/reaper ./cmd/reaper
-RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/worker ./cmd/worker
+RUN CGO_ENABLED=1 GOOS=linux go build -o /bin/worker ./cmd/worker
 
 FROM alpine:3.19 AS base
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates vips
 
 FROM base AS coordinator
 COPY --from=builder /bin/coordinator /usr/local/bin/coordinator
