@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/christianmz565/microphoto/pkg/client/metrics"
-	"github.com/christianmz565/microphoto/proto/jobs"
+	jobs "github.com/christianmz565/microphoto/proto/jobs/v1"
 	"github.com/google/uuid"
 )
 
@@ -81,17 +81,29 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Image file is required", http.StatusBadRequest)
 		return
 	}
-	// We don't defer file.Close() here because we'll read it now and close it after.
 
 	jobTypeStr := r.FormValue("type")
 	jobType := parseJobType(jobTypeStr)
-	if jobType == jobs.JobType_UNKNOWN_TYPE {
+	if jobType == jobs.JobType_JOB_TYPE_UNSPECIFIED {
 		file.Close()
 		http.Error(w, "Invalid job type", http.StatusBadRequest)
 		return
 	}
 
-	// Read the file into memory to release the HTTP connection quickly
+	params := make(map[string]string)
+	if r.FormValue("radius") != "" {
+		params["radius"] = r.FormValue("radius")
+	}
+	if r.FormValue("factor") != "" {
+		params["factor"] = r.FormValue("factor")
+	}
+	if r.FormValue("width") != "" {
+		params["width"] = r.FormValue("width")
+	}
+	if r.FormValue("height") != "" {
+		params["height"] = r.FormValue("height")
+	}
+
 	data, err := io.ReadAll(file)
 	file.Close()
 	if err != nil {
@@ -101,20 +113,18 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 
 	taskID := uuid.New().String()
 
-	// Respond with 202 Accepted immediately
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]string{
 		"task_id": taskID,
 	})
 
-	// Process the rest in a goroutine
 	go func() {
-		// Use a background context as the request context will be cancelled
+
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
-		err := h.orchestrator.ProcessImage(ctx, taskID, bytes.NewReader(data), header.Filename, jobType, int64(len(data)))
+		err := h.orchestrator.ProcessImage(ctx, taskID, bytes.NewReader(data), header.Filename, jobType, int64(len(data)), params)
 		if err != nil {
 			log.Printf("Background processing failed for task %s: %v", taskID, err)
 		}
@@ -125,14 +135,16 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 func parseJobType(s string) jobs.JobType {
 	switch s {
 	case "RESIZE":
-		return jobs.JobType_RESIZE
+		return jobs.JobType_JOB_TYPE_RESIZE
 	case "GRAYSCALE":
-		return jobs.JobType_GRAYSCALE
+		return jobs.JobType_JOB_TYPE_GRAYSCALE
 	case "BLUR":
-		return jobs.JobType_BLUR
+		return jobs.JobType_JOB_TYPE_BLUR
+	case "BRIGHTNESS":
+		return jobs.JobType_JOB_TYPE_BRIGHTNESS
 	case "RECONSTRUCT":
-		return jobs.JobType_RECONSTRUCT
+		return jobs.JobType_JOB_TYPE_RECONSTRUCT
 	default:
-		return jobs.JobType_UNKNOWN_TYPE
+		return jobs.JobType_JOB_TYPE_UNSPECIFIED
 	}
 }

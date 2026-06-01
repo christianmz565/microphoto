@@ -14,7 +14,7 @@ import (
 	"github.com/christianmz565/microphoto/pkg/client/metrics"
 	"github.com/christianmz565/microphoto/pkg/client/redis"
 	"github.com/christianmz565/microphoto/pkg/model"
-	"github.com/christianmz565/microphoto/proto/jobs"
+	jobs "github.com/christianmz565/microphoto/proto/jobs/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -89,7 +89,7 @@ func runReaperCycle(ctx context.Context, rClient *redis.Client, m *metrics.Metri
 			if now-job.Timestamp > cfg.GlobalTimeoutSeconds {
 				taskID := job.ParentId
 				if taskID == "" {
-					taskID = job.Id // fallback for jobs without parent
+					taskID = job.Id
 				}
 				log.Printf("Detected timeout for job %s (task %s, worker %s)", job.Id, taskID, progressID)
 

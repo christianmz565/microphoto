@@ -75,7 +75,7 @@ func main() {
 			log.Printf("Processing job %s (Type: %s, Parent: %s)", job.Id, job.Type, job.ParentId)
 			if err := processor.HandleJob(ctx, job); err != nil {
 				log.Printf("Error handling job %s: %v", job.Id, err)
-				// TODO: Implement retry logic or move to a failed queue
+
 				continue
 			}
 

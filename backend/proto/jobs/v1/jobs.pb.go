@@ -4,7 +4,7 @@
 // 	protoc        v7.34.1
 // source: jobs.proto
 
-package jobs
+package v1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -24,31 +24,34 @@ const (
 type JobType int32
 
 const (
-	JobType_UNKNOWN_TYPE JobType = 0
-	JobType_RESIZE       JobType = 1
-	JobType_GRAYSCALE    JobType = 2
-	JobType_BLUR         JobType = 3
-	JobType_RECONSTRUCT  JobType = 4
-	JobType_SLICE        JobType = 5
+	JobType_JOB_TYPE_UNSPECIFIED JobType = 0
+	JobType_JOB_TYPE_RESIZE      JobType = 1
+	JobType_JOB_TYPE_GRAYSCALE   JobType = 2
+	JobType_JOB_TYPE_BLUR        JobType = 3
+	JobType_JOB_TYPE_RECONSTRUCT JobType = 4
+	JobType_JOB_TYPE_SLICE       JobType = 5
+	JobType_JOB_TYPE_BRIGHTNESS  JobType = 6
 )
 
 // Enum value maps for JobType.
 var (
 	JobType_name = map[int32]string{
-		0: "UNKNOWN_TYPE",
-		1: "RESIZE",
-		2: "GRAYSCALE",
-		3: "BLUR",
-		4: "RECONSTRUCT",
-		5: "SLICE",
+		0: "JOB_TYPE_UNSPECIFIED",
+		1: "JOB_TYPE_RESIZE",
+		2: "JOB_TYPE_GRAYSCALE",
+		3: "JOB_TYPE_BLUR",
+		4: "JOB_TYPE_RECONSTRUCT",
+		5: "JOB_TYPE_SLICE",
+		6: "JOB_TYPE_BRIGHTNESS",
 	}
 	JobType_value = map[string]int32{
-		"UNKNOWN_TYPE": 0,
-		"RESIZE":       1,
-		"GRAYSCALE":    2,
-		"BLUR":         3,
-		"RECONSTRUCT":  4,
-		"SLICE":        5,
+		"JOB_TYPE_UNSPECIFIED": 0,
+		"JOB_TYPE_RESIZE":      1,
+		"JOB_TYPE_GRAYSCALE":   2,
+		"JOB_TYPE_BLUR":        3,
+		"JOB_TYPE_RECONSTRUCT": 4,
+		"JOB_TYPE_SLICE":       5,
+		"JOB_TYPE_BRIGHTNESS":  6,
 	}
 )
 
@@ -82,25 +85,25 @@ func (JobType) EnumDescriptor() ([]byte, []int) {
 type JobStatus int32
 
 const (
-	JobStatus_PENDING     JobStatus = 0
-	JobStatus_IN_PROGRESS JobStatus = 1
-	JobStatus_COMPLETED   JobStatus = 2
-	JobStatus_FAILED      JobStatus = 3
+	JobStatus_JOB_STATUS_UNSPECIFIED JobStatus = 0
+	JobStatus_JOB_STATUS_IN_PROGRESS JobStatus = 1
+	JobStatus_JOB_STATUS_COMPLETED   JobStatus = 2
+	JobStatus_JOB_STATUS_FAILED      JobStatus = 3
 )
 
 // Enum value maps for JobStatus.
 var (
 	JobStatus_name = map[int32]string{
-		0: "PENDING",
-		1: "IN_PROGRESS",
-		2: "COMPLETED",
-		3: "FAILED",
+		0: "JOB_STATUS_UNSPECIFIED",
+		1: "JOB_STATUS_IN_PROGRESS",
+		2: "JOB_STATUS_COMPLETED",
+		3: "JOB_STATUS_FAILED",
 	}
 	JobStatus_value = map[string]int32{
-		"PENDING":     0,
-		"IN_PROGRESS": 1,
-		"COMPLETED":   2,
-		"FAILED":      3,
+		"JOB_STATUS_UNSPECIFIED": 0,
+		"JOB_STATUS_IN_PROGRESS": 1,
+		"JOB_STATUS_COMPLETED":   2,
+		"JOB_STATUS_FAILED":      3,
 	}
 )
 
@@ -202,8 +205,8 @@ func (x *Region) GetHeight() int32 {
 type Job struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Id                string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Type              JobType                `protobuf:"varint,2,opt,name=type,proto3,enum=jobs.JobType" json:"type,omitempty"`
-	Status            JobStatus              `protobuf:"varint,3,opt,name=status,proto3,enum=jobs.JobStatus" json:"status,omitempty"`
+	Type              JobType                `protobuf:"varint,2,opt,name=type,proto3,enum=jobs.v1.JobType" json:"type,omitempty"`
+	Status            JobStatus              `protobuf:"varint,3,opt,name=status,proto3,enum=jobs.v1.JobStatus" json:"status,omitempty"`
 	OriginalImagePath string                 `protobuf:"bytes,4,opt,name=original_image_path,json=originalImagePath,proto3" json:"original_image_path,omitempty"`
 	ResultImagePath   string                 `protobuf:"bytes,5,opt,name=result_image_path,json=resultImagePath,proto3" json:"result_image_path,omitempty"`
 	ParentId          string                 `protobuf:"bytes,6,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
@@ -257,14 +260,14 @@ func (x *Job) GetType() JobType {
 	if x != nil {
 		return x.Type
 	}
-	return JobType_UNKNOWN_TYPE
+	return JobType_JOB_TYPE_UNSPECIFIED
 }
 
 func (x *Job) GetStatus() JobStatus {
 	if x != nil {
 		return x.Status
 	}
-	return JobStatus_PENDING
+	return JobStatus_JOB_STATUS_UNSPECIFIED
 }
 
 func (x *Job) GetOriginalImagePath() string {
@@ -328,45 +331,44 @@ var File_jobs_proto protoreflect.FileDescriptor
 const file_jobs_proto_rawDesc = "" +
 	"\n" +
 	"\n" +
-	"jobs.proto\x12\x04jobs\"R\n" +
+	"jobs.proto\x12\ajobs.v1\"R\n" +
 	"\x06Region\x12\f\n" +
 	"\x01x\x18\x01 \x01(\x05R\x01x\x12\f\n" +
 	"\x01y\x18\x02 \x01(\x05R\x01y\x12\x14\n" +
 	"\x05width\x18\x03 \x01(\x05R\x05width\x12\x16\n" +
-	"\x06height\x18\x04 \x01(\x05R\x06height\"\xd3\x03\n" +
+	"\x06height\x18\x04 \x01(\x05R\x06height\"\xdf\x03\n" +
 	"\x03Job\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
-	"\x04type\x18\x02 \x01(\x0e2\r.jobs.JobTypeR\x04type\x12'\n" +
-	"\x06status\x18\x03 \x01(\x0e2\x0f.jobs.JobStatusR\x06status\x12.\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12$\n" +
+	"\x04type\x18\x02 \x01(\x0e2\x10.jobs.v1.JobTypeR\x04type\x12*\n" +
+	"\x06status\x18\x03 \x01(\x0e2\x12.jobs.v1.JobStatusR\x06status\x12.\n" +
 	"\x13original_image_path\x18\x04 \x01(\tR\x11originalImagePath\x12*\n" +
 	"\x11result_image_path\x18\x05 \x01(\tR\x0fresultImagePath\x12\x1b\n" +
-	"\tparent_id\x18\x06 \x01(\tR\bparentId\x12$\n" +
-	"\x06region\x18\a \x01(\v2\f.jobs.RegionR\x06region\x12\x1a\n" +
+	"\tparent_id\x18\x06 \x01(\tR\bparentId\x12'\n" +
+	"\x06region\x18\a \x01(\v2\x0f.jobs.v1.RegionR\x06region\x12\x1a\n" +
 	"\battempts\x18\b \x01(\x05R\battempts\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\t \x01(\x03R\tcreatedAt\x129\n" +
+	"created_at\x18\t \x01(\x03R\tcreatedAt\x12<\n" +
 	"\n" +
 	"parameters\x18\n" +
-	" \x03(\v2\x19.jobs.Job.ParametersEntryR\n" +
+	" \x03(\v2\x1c.jobs.v1.Job.ParametersEntryR\n" +
 	"parameters\x12\x1c\n" +
 	"\ttimestamp\x18\v \x01(\x03R\ttimestamp\x1a=\n" +
 	"\x0fParametersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\\\n" +
-	"\aJobType\x12\x10\n" +
-	"\fUNKNOWN_TYPE\x10\x00\x12\n" +
-	"\n" +
-	"\x06RESIZE\x10\x01\x12\r\n" +
-	"\tGRAYSCALE\x10\x02\x12\b\n" +
-	"\x04BLUR\x10\x03\x12\x0f\n" +
-	"\vRECONSTRUCT\x10\x04\x12\t\n" +
-	"\x05SLICE\x10\x05*D\n" +
-	"\tJobStatus\x12\v\n" +
-	"\aPENDING\x10\x00\x12\x0f\n" +
-	"\vIN_PROGRESS\x10\x01\x12\r\n" +
-	"\tCOMPLETED\x10\x02\x12\n" +
-	"\n" +
-	"\x06FAILED\x10\x03B1Z/github.com/christianmz565/microphoto/proto/jobsb\x06proto3"
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xaa\x01\n" +
+	"\aJobType\x12\x18\n" +
+	"\x14JOB_TYPE_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fJOB_TYPE_RESIZE\x10\x01\x12\x16\n" +
+	"\x12JOB_TYPE_GRAYSCALE\x10\x02\x12\x11\n" +
+	"\rJOB_TYPE_BLUR\x10\x03\x12\x18\n" +
+	"\x14JOB_TYPE_RECONSTRUCT\x10\x04\x12\x12\n" +
+	"\x0eJOB_TYPE_SLICE\x10\x05\x12\x17\n" +
+	"\x13JOB_TYPE_BRIGHTNESS\x10\x06*t\n" +
+	"\tJobStatus\x12\x1a\n" +
+	"\x16JOB_STATUS_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16JOB_STATUS_IN_PROGRESS\x10\x01\x12\x18\n" +
+	"\x14JOB_STATUS_COMPLETED\x10\x02\x12\x15\n" +
+	"\x11JOB_STATUS_FAILED\x10\x03B4Z2github.com/christianmz565/microphoto/proto/jobs/v1b\x06proto3"
 
 var (
 	file_jobs_proto_rawDescOnce sync.Once
@@ -383,17 +385,17 @@ func file_jobs_proto_rawDescGZIP() []byte {
 var file_jobs_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_jobs_proto_goTypes = []any{
-	(JobType)(0),   // 0: jobs.JobType
-	(JobStatus)(0), // 1: jobs.JobStatus
-	(*Region)(nil), // 2: jobs.Region
-	(*Job)(nil),    // 3: jobs.Job
-	nil,            // 4: jobs.Job.ParametersEntry
+	(JobType)(0),   // 0: jobs.v1.JobType
+	(JobStatus)(0), // 1: jobs.v1.JobStatus
+	(*Region)(nil), // 2: jobs.v1.Region
+	(*Job)(nil),    // 3: jobs.v1.Job
+	nil,            // 4: jobs.v1.Job.ParametersEntry
 }
 var file_jobs_proto_depIdxs = []int32{
-	0, // 0: jobs.Job.type:type_name -> jobs.JobType
-	1, // 1: jobs.Job.status:type_name -> jobs.JobStatus
-	2, // 2: jobs.Job.region:type_name -> jobs.Region
-	4, // 3: jobs.Job.parameters:type_name -> jobs.Job.ParametersEntry
+	0, // 0: jobs.v1.Job.type:type_name -> jobs.v1.JobType
+	1, // 1: jobs.v1.Job.status:type_name -> jobs.v1.JobStatus
+	2, // 2: jobs.v1.Job.region:type_name -> jobs.v1.Region
+	4, // 3: jobs.v1.Job.parameters:type_name -> jobs.v1.Job.ParametersEntry
 	4, // [4:4] is the sub-list for method output_type
 	4, // [4:4] is the sub-list for method input_type
 	4, // [4:4] is the sub-list for extension type_name

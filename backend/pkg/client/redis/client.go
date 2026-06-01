@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/christianmz565/microphoto/pkg/model"
-	"github.com/christianmz565/microphoto/proto/jobs"
+	jobs "github.com/christianmz565/microphoto/proto/jobs/v1"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 )

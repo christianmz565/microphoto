@@ -9,8 +9,8 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	"image/png"
-	_ "image/png"
 	"log"
+	"maps"
 	"math"
 	"strconv"
 	"time"
@@ -19,7 +19,7 @@ import (
 	"github.com/christianmz565/microphoto/pkg/client/minio"
 	"github.com/christianmz565/microphoto/pkg/client/redis"
 	"github.com/christianmz565/microphoto/pkg/model"
-	"github.com/christianmz565/microphoto/proto/jobs"
+	jobs "github.com/christianmz565/microphoto/proto/jobs/v1"
 	"github.com/google/uuid"
 )
 
@@ -54,9 +54,9 @@ func (p *Processor) HandleJob(ctx context.Context, job *jobs.Job) error {
 	}()
 
 	switch job.Type {
-	case jobs.JobType_SLICE:
+	case jobs.JobType_JOB_TYPE_SLICE:
 		return p.handleSlice(ctx, job)
-	case jobs.JobType_RECONSTRUCT:
+	case jobs.JobType_JOB_TYPE_RECONSTRUCT:
 		return p.handleReconstruct(ctx, job)
 	default:
 		return p.handleProcess(ctx, job)
@@ -83,7 +83,6 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 
 	W, H := img.Bounds().Dx(), img.Bounds().Dy()
 	totalPixels := W * H
-	// Use the same logic as previously in coordinator
 	const MaxPixelsPerSubtask = 1000000
 	const DefaultAttempts = 3
 
@@ -101,6 +100,15 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 	var subtasks []*jobs.Job
 	targetType := jobs.JobType(jobs.JobType_value[job.Parameters["target_type"]])
 
+	radius := 0
+	if targetType == jobs.JobType_JOB_TYPE_BLUR {
+		if r, err := strconv.Atoi(job.Parameters["radius"]); err == nil {
+			radius = r
+		} else {
+			radius = 1
+		}
+	}
+
 	for i := 0; i < N; i++ {
 		startY := i * rowsPerSubtask
 		endY := (i + 1) * rowsPerSubtask
@@ -108,7 +116,24 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 			endY = H
 		}
 
-		rect := image.Rect(0, startY, W, endY)
+		paddingTop := 0
+		paddingBottom := 0
+		if radius > 0 {
+			if startY > 0 {
+				paddingTop = radius
+				if startY-paddingTop < 0 {
+					paddingTop = startY
+				}
+			}
+			if endY < H {
+				paddingBottom = radius
+				if endY+paddingBottom > H {
+					paddingBottom = H - endY
+				}
+			}
+		}
+
+		rect := image.Rect(0, startY-paddingTop, W, endY+paddingBottom)
 		subImg := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
 		draw.Draw(subImg, subImg.Bounds(), img, rect.Min, draw.Src)
 
@@ -123,28 +148,32 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 			return fmt.Errorf("upload fragment %d: %w", i, err)
 		}
 
+		subJobParams := make(map[string]string)
+		maps.Copy(subJobParams, job.Parameters)
+		subJobParams["index"] = fmt.Sprintf("%d", i)
+		subJobParams["total_subtasks"] = fmt.Sprintf("%d", N)
+		subJobParams["original_width"] = fmt.Sprintf("%d", W)
+		subJobParams["original_height"] = fmt.Sprintf("%d", H)
+		subJobParams["padding_top"] = fmt.Sprintf("%d", paddingTop)
+		subJobParams["padding_bottom"] = fmt.Sprintf("%d", paddingBottom)
+
 		subJobID := uuid.New().String()
 		subJob := &jobs.Job{
 			Id:                subJobID,
 			Type:              targetType,
-			Status:            jobs.JobStatus_PENDING,
-			OriginalImagePath: fragmentPath, // Now points to the fragment
+			Status:            jobs.JobStatus_JOB_STATUS_UNSPECIFIED,
+			OriginalImagePath: fragmentPath,
 			ParentId:          job.ParentId,
 			Region: &jobs.Region{
 				X:      0,
-				Y:      0, // Fragment-relative
+				Y:      0,
 				Width:  int32(W),
-				Height: int32(endY - startY),
+				Height: int32(rect.Dy()),
 			},
-			Attempts:  DefaultAttempts,
-			CreatedAt: time.Now().Unix(),
-			Timestamp: time.Now().Unix(),
-			Parameters: map[string]string{
-				"index":           fmt.Sprintf("%d", i),
-				"total_subtasks":  fmt.Sprintf("%d", N),
-				"original_width":  fmt.Sprintf("%d", W),
-				"original_height": fmt.Sprintf("%d", H),
-			},
+			Attempts:   DefaultAttempts,
+			CreatedAt:  time.Now().Unix(),
+			Timestamp:  time.Now().Unix(),
+			Parameters: subJobParams,
 		}
 		subtasks = append(subtasks, subJob)
 	}
@@ -196,12 +225,58 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 
 	var processed image.Image
 	switch job.Type {
-	case jobs.JobType_GRAYSCALE:
+	case jobs.JobType_JOB_TYPE_GRAYSCALE:
 		processed = ApplyGrayscale(subImg)
-	case jobs.JobType_BLUR:
-		processed = ApplyBlur(subImg)
+	case jobs.JobType_JOB_TYPE_BLUR:
+		radius := 1
+		if r, err := strconv.Atoi(job.Parameters["radius"]); err == nil {
+			radius = r
+		}
+		processed = ApplyBlur(subImg, radius)
+	case jobs.JobType_JOB_TYPE_BRIGHTNESS:
+		factor := 1.0
+		if f, err := strconv.ParseFloat(job.Parameters["factor"], 64); err == nil {
+			factor = f
+		}
+		processed = ApplyBrightness(subImg, factor)
+	case jobs.JobType_JOB_TYPE_RESIZE:
+		targetWidth, _ := strconv.Atoi(job.Parameters["width"])
+		targetHeight, _ := strconv.Atoi(job.Parameters["height"])
+		originalWidth, _ := strconv.Atoi(job.Parameters["original_width"])
+		originalHeight, _ := strconv.Atoi(job.Parameters["original_height"])
+
+		if originalHeight > 0 && originalWidth > 0 && targetHeight > 0 && targetWidth > 0 {
+			scaleY := float64(targetHeight) / float64(originalHeight)
+			newFragHeight := int(float64(rect.Dy()) * scaleY)
+
+			scaleX := float64(targetWidth) / float64(originalWidth)
+			newFragWidth := int(float64(rect.Dx()) * scaleX)
+
+			processed = ApplyResize(subImg, newFragWidth, newFragHeight)
+		} else {
+			processed = subImg
+		}
 	default:
 		processed = subImg
+	}
+
+	paddingTop, _ := strconv.Atoi(job.Parameters["padding_top"])
+	paddingBottom, _ := strconv.Atoi(job.Parameters["padding_bottom"])
+
+	if paddingTop > 0 || paddingBottom > 0 {
+		bounds := processed.Bounds()
+		if job.Type == jobs.JobType_JOB_TYPE_RESIZE {
+			originalHeight, _ := strconv.Atoi(job.Parameters["original_height"])
+			targetHeight, _ := strconv.Atoi(job.Parameters["height"])
+			scaleY := float64(targetHeight) / float64(originalHeight)
+			paddingTop = int(float64(paddingTop) * scaleY)
+			paddingBottom = int(float64(paddingBottom) * scaleY)
+		}
+
+		cropRect := image.Rect(0, paddingTop, bounds.Dx(), bounds.Dy()-paddingBottom)
+		croppedImg := image.NewRGBA(image.Rect(0, 0, cropRect.Dx(), cropRect.Dy()))
+		draw.Draw(croppedImg, croppedImg.Bounds(), processed, cropRect.Min, draw.Src)
+		processed = croppedImg
 	}
 
 	index := job.Parameters["index"]
@@ -233,7 +308,7 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 	if count == 0 {
 		reconstructJob := &jobs.Job{
 			Id:                fmt.Sprintf("recon-%s", job.ParentId),
-			Type:              jobs.JobType_RECONSTRUCT,
+			Type:              jobs.JobType_JOB_TYPE_RECONSTRUCT,
 			ParentId:          job.ParentId,
 			OriginalImagePath: job.OriginalImagePath,
 			CreatedAt:         time.Now().Unix(),
@@ -258,16 +333,23 @@ func (p *Processor) handleReconstruct(ctx context.Context, job *jobs.Job) error 
 	originalHeight, _ := strconv.Atoi(job.Parameters["original_height"])
 	originalWidth, _ := strconv.Atoi(job.Parameters["original_width"])
 
+	targetWidth := originalWidth
+	targetHeight := originalHeight
+
+	if w, err := strconv.Atoi(job.Parameters["width"]); err == nil && w > 0 {
+		targetWidth = w
+	}
+	if h, err := strconv.Atoi(job.Parameters["height"]); err == nil && h > 0 {
+		targetHeight = h
+	}
+
 	if originalWidth == 0 || originalHeight == 0 || totalSubtasks == 0 {
 		return fmt.Errorf("invalid job parameters: W=%d, H=%d, N=%d", originalWidth, originalHeight, totalSubtasks)
 	}
 
-	finalImg := image.NewRGBA(image.Rect(0, 0, originalWidth, originalHeight))
-	rowsPerSubtask := originalHeight / totalSubtasks
-	if rowsPerSubtask <= 0 {
-		rowsPerSubtask = 1
-	}
+	finalImg := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
 
+	currentY := 0
 	for i := range totalSubtasks {
 		path := fmt.Sprintf("%s/res_sub_%d.png", job.ParentId, i)
 		subReader, err := p.minio.DownloadObject(ctx, BucketName, path)
@@ -281,8 +363,8 @@ func (p *Processor) handleReconstruct(ctx context.Context, job *jobs.Job) error 
 			return fmt.Errorf("decode subtask %d: %w", i, err)
 		}
 
-		startY := i * rowsPerSubtask
-		draw.Draw(finalImg, image.Rect(0, startY, originalWidth, startY+subImg.Bounds().Dy()), subImg, image.Point{}, draw.Src)
+		draw.Draw(finalImg, image.Rect(0, currentY, targetWidth, currentY+subImg.Bounds().Dy()), subImg, image.Point{}, draw.Src)
+		currentY += subImg.Bounds().Dy()
 	}
 
 	finalPath := fmt.Sprintf("%s/final.png", job.ParentId)

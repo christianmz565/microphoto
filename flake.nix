@@ -42,6 +42,7 @@
             gotools
             golangci-lint
             protobuf
+            buf
 
             bun
 

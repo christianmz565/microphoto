@@ -38,8 +38,11 @@ func ApplyBrightness(img image.Image, factor float64) image.Image {
 	return newImg
 }
 
-// ApplyBlur applies a simple 3x3 box blur to the image.
-func ApplyBlur(img image.Image) image.Image {
+// ApplyBlur applies a simple box blur to the image with a given radius.
+func ApplyBlur(img image.Image, radius int) image.Image {
+	if radius <= 0 {
+		return img
+	}
 	bounds := img.Bounds()
 	newImg := image.NewRGBA(bounds)
 
@@ -48,8 +51,8 @@ func ApplyBlur(img image.Image) image.Image {
 			var rSum, gSum, bSum, aSum uint32
 			var count uint32
 
-			for dy := -1; dy <= 1; dy++ {
-				for dx := -1; dx <= 1; dx++ {
+			for dy := -radius; dy <= radius; dy++ {
+				for dx := -radius; dx <= radius; dx++ {
 					nx, ny := x+dx, y+dy
 					if nx >= bounds.Min.X && nx < bounds.Max.X && ny >= bounds.Min.Y && ny < bounds.Max.Y {
 						r, g, b, a := img.At(nx, ny).RGBA()
@@ -70,5 +73,37 @@ func ApplyBlur(img image.Image) image.Image {
 			})
 		}
 	}
+	return newImg
+}
+
+// ApplyResize resizes an image to the target dimensions using Nearest-Neighbor interpolation.
+func ApplyResize(img image.Image, targetWidth, targetHeight int) image.Image {
+	bounds := img.Bounds()
+	originalWidth := bounds.Dx()
+	originalHeight := bounds.Dy()
+
+	if targetWidth <= 0 || targetHeight <= 0 {
+		return img
+	}
+
+	newImg := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
+
+	for y := range targetHeight {
+		for x := 0; x < targetWidth; x++ {
+
+			srcX := int(float64(x) * float64(originalWidth) / float64(targetWidth))
+			srcY := int(float64(y) * float64(originalHeight) / float64(targetHeight))
+
+			if srcX >= originalWidth {
+				srcX = originalWidth - 1
+			}
+			if srcY >= originalHeight {
+				srcY = originalHeight - 1
+			}
+
+			newImg.Set(x, y, img.At(bounds.Min.X+srcX, bounds.Min.Y+srcY))
+		}
+	}
+
 	return newImg
 }

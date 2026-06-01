@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"time"
 
 	"github.com/christianmz565/microphoto/pkg/client/metrics"
 	"github.com/christianmz565/microphoto/pkg/client/minio"
 	"github.com/christianmz565/microphoto/pkg/client/redis"
-	"github.com/christianmz565/microphoto/proto/jobs"
+	jobs "github.com/christianmz565/microphoto/proto/jobs/v1"
 	"github.com/google/uuid"
 )
 
@@ -34,7 +35,7 @@ func NewOrchestrator(r *redis.Client, m *minio.Client, mt *metrics.Metrics) *Orc
 }
 
 // ProcessImage handles the initial image upload and pushes a SLICE task to Redis.
-func (o *Orchestrator) ProcessImage(ctx context.Context, taskID string, file io.Reader, filename string, jobType jobs.JobType, size int64) error {
+func (o *Orchestrator) ProcessImage(ctx context.Context, taskID string, file io.Reader, filename string, jobType jobs.JobType, size int64, params map[string]string) error {
 	startTime := time.Now()
 
 	path := fmt.Sprintf("%s/original.png", taskID)
@@ -43,17 +44,20 @@ func (o *Orchestrator) ProcessImage(ctx context.Context, taskID string, file io.
 		return fmt.Errorf("upload to minio: %w", err)
 	}
 
+	jobParams := map[string]string{
+		"target_type": jobType.String(),
+	}
+	maps.Copy(jobParams, params)
+
 	sliceJob := &jobs.Job{
 		Id:                uuid.New().String(),
-		Type:              jobs.JobType_SLICE,
-		Status:            jobs.JobStatus_PENDING,
+		Type:              jobs.JobType_JOB_TYPE_SLICE,
+		Status:            jobs.JobStatus_JOB_STATUS_UNSPECIFIED,
 		OriginalImagePath: path,
 		ParentId:          taskID,
 		CreatedAt:         time.Now().Unix(),
 		Timestamp:         time.Now().Unix(),
-		Parameters: map[string]string{
-			"target_type": jobType.String(),
-		},
+		Parameters:        jobParams,
 	}
 
 	err = o.redis.PushTask(ctx, sliceJob)
