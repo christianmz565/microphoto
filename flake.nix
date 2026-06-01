@@ -26,6 +26,7 @@
             stdenv.cc.cc
             zlib
             glib
+            vips
             libxcb
             libglvnd
           ];
@@ -41,8 +42,14 @@
             gopls
             gotools
             golangci-lint
+            protobuf
+            buf
 
             bun
+
+            just
+            vips
+            pkg-config
           ];
 
           buildInputs = [ pkgs.bashInteractive ];
