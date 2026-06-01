@@ -67,7 +67,7 @@ services:
       - "9092:9092"
     environment:
       - REDIS_URL=redis:6379
-      - GLOBAL_TIMEOUT_SECONDS=30
+      - GLOBAL_TIMEOUT_SECONDS=300
       - REAPER_INTERVAL_SECONDS=5
     depends_on:
       redis:

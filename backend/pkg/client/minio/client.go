@@ -34,7 +34,16 @@ func (c *Client) UploadObject(ctx context.Context, bucket, path string, reader i
 
 // DownloadObject downloads an object from the specified bucket and path
 func (c *Client) DownloadObject(ctx context.Context, bucket, path string) (io.ReadCloser, error) {
-	return c.minioClient.GetObject(ctx, bucket, path, minio.GetObjectOptions{})
+	obj, err := c.minioClient.GetObject(ctx, bucket, path, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := obj.Stat(); err != nil {
+		return nil, err
+	}
+
+	return obj, nil
 }
 
 // SetupLifecyclePolicy configures expiration rules for a bucket.

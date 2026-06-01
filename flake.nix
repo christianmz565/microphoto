@@ -26,6 +26,7 @@
             stdenv.cc.cc
             zlib
             glib
+            vips
             libxcb
             libglvnd
           ];
@@ -47,6 +48,8 @@
             bun
 
             just
+            vips
+            pkg-config
           ];
 
           buildInputs = [ pkgs.bashInteractive ];

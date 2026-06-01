@@ -109,73 +109,91 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 		}
 	}
 
+	type subTaskResult struct {
+		job *jobs.Job
+		err error
+	}
+	resChan := make(chan subTaskResult, N)
+
 	for i := 0; i < N; i++ {
-		startY := i * rowsPerSubtask
-		endY := (i + 1) * rowsPerSubtask
-		if i == N-1 {
-			endY = H
-		}
+		go func(i int) {
+			startY := i * rowsPerSubtask
+			endY := (i + 1) * rowsPerSubtask
+			if i == N-1 {
+				endY = H
+			}
 
-		paddingTop := 0
-		paddingBottom := 0
-		if radius > 0 {
-			if startY > 0 {
-				paddingTop = radius
-				if startY-paddingTop < 0 {
-					paddingTop = startY
+			paddingTop := 0
+			paddingBottom := 0
+			if radius > 0 {
+				if startY > 0 {
+					paddingTop = radius
+					if startY-paddingTop < 0 {
+						paddingTop = startY
+					}
+				}
+				if endY < H {
+					paddingBottom = radius
+					if endY+paddingBottom > H {
+						paddingBottom = H - endY
+					}
 				}
 			}
-			if endY < H {
-				paddingBottom = radius
-				if endY+paddingBottom > H {
-					paddingBottom = H - endY
-				}
+
+			rect := image.Rect(0, startY-paddingTop, W, endY+paddingBottom)
+			subImg := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
+			draw.Draw(subImg, subImg.Bounds(), img, rect.Min, draw.Src)
+
+			fragmentPath := fmt.Sprintf("%s/sub_%d.png", job.ParentId, i)
+			var buf bytes.Buffer
+			if err := png.Encode(&buf, subImg); err != nil {
+				resChan <- subTaskResult{err: fmt.Errorf("encode fragment %d: %w", i, err)}
+				return
 			}
+
+			_, err = p.minio.UploadObject(ctx, BucketName, fragmentPath, &buf, int64(buf.Len()), "image/png")
+			if err != nil {
+				resChan <- subTaskResult{err: fmt.Errorf("upload fragment %d: %w", i, err)}
+				return
+			}
+
+			subJobParams := make(map[string]string)
+			maps.Copy(subJobParams, job.Parameters)
+			subJobParams["index"] = fmt.Sprintf("%d", i)
+			subJobParams["total_subtasks"] = fmt.Sprintf("%d", N)
+			subJobParams["original_width"] = fmt.Sprintf("%d", W)
+			subJobParams["original_height"] = fmt.Sprintf("%d", H)
+			subJobParams["padding_top"] = fmt.Sprintf("%d", paddingTop)
+			subJobParams["padding_bottom"] = fmt.Sprintf("%d", paddingBottom)
+
+			subJobID := uuid.New().String()
+			subJob := &jobs.Job{
+				Id:                subJobID,
+				Type:              targetType,
+				Status:            jobs.JobStatus_JOB_STATUS_UNSPECIFIED,
+				OriginalImagePath: fragmentPath,
+				ParentId:          job.ParentId,
+				Region: &jobs.Region{
+					X:      0,
+					Y:      0,
+					Width:  int32(W),
+					Height: int32(rect.Dy()),
+				},
+				Attempts:   DefaultAttempts,
+				CreatedAt:  time.Now().Unix(),
+				Timestamp:  time.Now().Unix(),
+				Parameters: subJobParams,
+			}
+			resChan <- subTaskResult{job: subJob}
+		}(i)
+	}
+
+	for i := 0; i < N; i++ {
+		res := <-resChan
+		if res.err != nil {
+			return res.err
 		}
-
-		rect := image.Rect(0, startY-paddingTop, W, endY+paddingBottom)
-		subImg := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
-		draw.Draw(subImg, subImg.Bounds(), img, rect.Min, draw.Src)
-
-		fragmentPath := fmt.Sprintf("%s/sub_%d.png", job.ParentId, i)
-		var buf bytes.Buffer
-		if err := png.Encode(&buf, subImg); err != nil {
-			return fmt.Errorf("encode fragment %d: %w", i, err)
-		}
-
-		_, err = p.minio.UploadObject(ctx, BucketName, fragmentPath, &buf, int64(buf.Len()), "image/png")
-		if err != nil {
-			return fmt.Errorf("upload fragment %d: %w", i, err)
-		}
-
-		subJobParams := make(map[string]string)
-		maps.Copy(subJobParams, job.Parameters)
-		subJobParams["index"] = fmt.Sprintf("%d", i)
-		subJobParams["total_subtasks"] = fmt.Sprintf("%d", N)
-		subJobParams["original_width"] = fmt.Sprintf("%d", W)
-		subJobParams["original_height"] = fmt.Sprintf("%d", H)
-		subJobParams["padding_top"] = fmt.Sprintf("%d", paddingTop)
-		subJobParams["padding_bottom"] = fmt.Sprintf("%d", paddingBottom)
-
-		subJobID := uuid.New().String()
-		subJob := &jobs.Job{
-			Id:                subJobID,
-			Type:              targetType,
-			Status:            jobs.JobStatus_JOB_STATUS_UNSPECIFIED,
-			OriginalImagePath: fragmentPath,
-			ParentId:          job.ParentId,
-			Region: &jobs.Region{
-				X:      0,
-				Y:      0,
-				Width:  int32(W),
-				Height: int32(rect.Dy()),
-			},
-			Attempts:   DefaultAttempts,
-			CreatedAt:  time.Now().Unix(),
-			Timestamp:  time.Now().Unix(),
-			Parameters: subJobParams,
-		}
-		subtasks = append(subtasks, subJob)
+		subtasks = append(subtasks, res.job)
 	}
 
 	if err := p.redis.InitializeTask(ctx, job.ParentId, N, DefaultAttempts); err != nil {
@@ -305,22 +323,30 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 
 	log.Printf("Task %s: subtasks remaining: %d", job.ParentId, count)
 
-	if count == 0 {
-		reconstructJob := &jobs.Job{
-			Id:                fmt.Sprintf("recon-%s", job.ParentId),
-			Type:              jobs.JobType_JOB_TYPE_RECONSTRUCT,
-			ParentId:          job.ParentId,
-			OriginalImagePath: job.OriginalImagePath,
-			CreatedAt:         time.Now().Unix(),
-			Timestamp:         time.Now().Unix(),
-			Parameters:        job.Parameters,
+	if count <= 0 {
+		triggerKey := fmt.Sprintf(`{"global"}:reconstruct_triggered:%s`, job.ParentId)
+		ok, err := p.redis.SetNX(ctx, triggerKey, "1", 24*time.Hour)
+		if err != nil {
+			return fmt.Errorf("check reconstruction trigger: %w", err)
 		}
 
-		err = p.redis.PushTask(ctx, reconstructJob)
-		if err != nil {
-			return fmt.Errorf("push reconstruct task: %w", err)
+		if ok {
+			reconstructJob := &jobs.Job{
+				Id:                fmt.Sprintf("recon-%s", job.ParentId),
+				Type:              jobs.JobType_JOB_TYPE_RECONSTRUCT,
+				ParentId:          job.ParentId,
+				OriginalImagePath: job.OriginalImagePath,
+				CreatedAt:         time.Now().Unix(),
+				Timestamp:         time.Now().Unix(),
+				Parameters:        job.Parameters,
+			}
+
+			err = p.redis.PushTask(ctx, reconstructJob)
+			if err != nil {
+				return fmt.Errorf("push reconstruct task: %w", err)
+			}
+			log.Printf("Triggered reconstruction for task %s", job.ParentId)
 		}
-		log.Printf("Triggered reconstruction for task %s", job.ParentId)
 	}
 
 	return nil
@@ -349,20 +375,43 @@ func (p *Processor) handleReconstruct(ctx context.Context, job *jobs.Job) error 
 
 	finalImg := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
 
-	currentY := 0
+	type subImgResult struct {
+		index int
+		img   image.Image
+		err   error
+	}
+	resChan := make(chan subImgResult, totalSubtasks)
+
 	for i := range totalSubtasks {
-		path := fmt.Sprintf("%s/res_sub_%d.png", job.ParentId, i)
-		subReader, err := p.minio.DownloadObject(ctx, BucketName, path)
-		if err != nil {
-			return fmt.Errorf("download subtask %d: %w", i, err)
-		}
+		go func(i int) {
+			path := fmt.Sprintf("%s/res_sub_%d.png", job.ParentId, i)
+			subReader, err := p.minio.DownloadObject(ctx, BucketName, path)
+			if err != nil {
+				resChan <- subImgResult{err: fmt.Errorf("download subtask %d: %w", i, err)}
+				return
+			}
+			defer subReader.Close()
 
-		subImg, _, err := image.Decode(subReader)
-		subReader.Close()
-		if err != nil {
-			return fmt.Errorf("decode subtask %d: %w", i, err)
-		}
+			subImg, _, err := image.Decode(subReader)
+			if err != nil {
+				resChan <- subImgResult{err: fmt.Errorf("decode subtask %d: %w", i, err)}
+				return
+			}
+			resChan <- subImgResult{index: i, img: subImg}
+		}(i)
+	}
 
+	subImages := make([]image.Image, totalSubtasks)
+	for range totalSubtasks {
+		res := <-resChan
+		if res.err != nil {
+			return res.err
+		}
+		subImages[res.index] = res.img
+	}
+
+	currentY := 0
+	for _, subImg := range subImages {
 		draw.Draw(finalImg, image.Rect(0, currentY, targetWidth, currentY+subImg.Bounds().Dy()), subImg, image.Point{}, draw.Src)
 		currentY += subImg.Bounds().Dy()
 	}

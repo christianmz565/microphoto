@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/christianmz565/microphoto/pkg/model"
 	jobs "github.com/christianmz565/microphoto/proto/jobs/v1"
@@ -60,6 +61,7 @@ func (c *Client) PushTasksPipeline(ctx context.Context, jobs []*jobs.Job) error 
 }
 
 // PopTaskReliable moves a task from {"global"}:queue to {"global"}:in_progress:{taskID} using BLMOVE
+// and updates the job.Timestamp to the current time to reset the reaper timeout.
 func (c *Client) PopTaskReliable(ctx context.Context, taskID string) (*jobs.Job, []byte, error) {
 	queueKey := `{"global"}:queue`
 	progressKey := fmt.Sprintf(`{"global"}:in_progress:%s`, taskID)
@@ -74,7 +76,22 @@ func (c *Client) PopTaskReliable(ctx context.Context, taskID string) (*jobs.Job,
 		return nil, nil, fmt.Errorf("unmarshal job: %w", err)
 	}
 
-	return job, []byte(data), nil
+	job.Timestamp = time.Now().Unix()
+	newData, err := proto.Marshal(job)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal job: %w", err)
+	}
+
+	if err := c.rdb.LSet(ctx, progressKey, 0, string(newData)).Err(); err != nil {
+		return nil, nil, fmt.Errorf("lset: %w", err)
+	}
+
+	return job, newData, nil
+}
+
+// SetNX sets a key if it doesn't exist
+func (c *Client) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) (bool, error) {
+	return c.rdb.SetNX(ctx, key, value, expiration).Result()
 }
 
 // DecrementCounter decrements the {"global"}:subtasks:{taskID} counter
