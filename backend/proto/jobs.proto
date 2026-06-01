@@ -37,4 +37,5 @@ message Job {
     int32 attempts = 8;
     int64 created_at = 9;
     map<string, string> parameters = 10;
+    int64 timestamp = 11;
 }

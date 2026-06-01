@@ -130,6 +130,7 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 			ParentId:          job.ParentId,
 			OriginalImagePath: job.OriginalImagePath,
 			CreatedAt:         time.Now().Unix(),
+			Timestamp:         time.Now().Unix(),
 			Parameters:        job.Parameters,
 		}
 

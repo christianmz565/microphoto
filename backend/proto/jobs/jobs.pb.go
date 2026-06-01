@@ -208,6 +208,7 @@ type Job struct {
 	Attempts          int32                  `protobuf:"varint,8,opt,name=attempts,proto3" json:"attempts,omitempty"`
 	CreatedAt         int64                  `protobuf:"varint,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	Parameters        map[string]string      `protobuf:"bytes,10,rep,name=parameters,proto3" json:"parameters,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Timestamp         int64                  `protobuf:"varint,11,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -312,6 +313,13 @@ func (x *Job) GetParameters() map[string]string {
 	return nil
 }
 
+func (x *Job) GetTimestamp() int64 {
+	if x != nil {
+		return x.Timestamp
+	}
+	return 0
+}
+
 var File_jobs_proto protoreflect.FileDescriptor
 
 const file_jobs_proto_rawDesc = "" +
@@ -322,7 +330,7 @@ const file_jobs_proto_rawDesc = "" +
 	"\x01x\x18\x01 \x01(\x05R\x01x\x12\f\n" +
 	"\x01y\x18\x02 \x01(\x05R\x01y\x12\x14\n" +
 	"\x05width\x18\x03 \x01(\x05R\x05width\x12\x16\n" +
-	"\x06height\x18\x04 \x01(\x05R\x06height\"\xb5\x03\n" +
+	"\x06height\x18\x04 \x01(\x05R\x06height\"\xd3\x03\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\x04type\x18\x02 \x01(\x0e2\r.jobs.JobTypeR\x04type\x12'\n" +
@@ -337,7 +345,8 @@ const file_jobs_proto_rawDesc = "" +
 	"\n" +
 	"parameters\x18\n" +
 	" \x03(\v2\x19.jobs.Job.ParametersEntryR\n" +
-	"parameters\x1a=\n" +
+	"parameters\x12\x1c\n" +
+	"\ttimestamp\x18\v \x01(\x03R\ttimestamp\x1a=\n" +
 	"\x0fParametersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*Q\n" +

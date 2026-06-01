@@ -100,6 +100,7 @@ func (o *Orchestrator) ProcessImage(ctx context.Context, file io.ReadSeeker, fil
 			},
 			Attempts:  DefaultAttempts,
 			CreatedAt: time.Now().Unix(),
+			Timestamp: time.Now().Unix(),
 			Parameters: map[string]string{
 				"index":           fmt.Sprintf("%d", i),
 				"total_subtasks":  fmt.Sprintf("%d", N),

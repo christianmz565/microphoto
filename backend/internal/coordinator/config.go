@@ -1,8 +1,7 @@
 package coordinator
 
 import (
-	"os"
-	"strconv"
+	"github.com/christianmz565/microphoto/pkg/env"
 )
 
 type Config struct {
@@ -19,52 +18,13 @@ type Config struct {
 // NewConfig creates a new Config populated from environment variables with default fallbacks.
 func NewConfig() *Config {
 	return &Config{
-		Port:           getEnv("PORT", "8080"),
-		MetricsPort:    getEnvInt("METRICS_PORT", 9090),
-		RedisAddr:      getEnv("REDIS_URL", "localhost:6379"),
-		MinioEndpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
-		MinioAccessKey: getEnv("MINIO_ACCESS_KEY", "minioadmin"),
-		MinioSecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
-		MinioSSL:       getEnvBool("MINIO_SSL", false),
-		MaxUploadSize:  getEnvInt64("MAX_UPLOAD_SIZE", 50<<20),
+		Port:           env.String("PORT", "8080"),
+		MetricsPort:    env.Int("METRICS_PORT", 9090),
+		RedisAddr:      env.String("REDIS_URL", "localhost:6379"),
+		MinioEndpoint:  env.String("MINIO_ENDPOINT", "localhost:9000"),
+		MinioAccessKey: env.String("MINIO_ACCESS_KEY", "minioadmin"),
+		MinioSecretKey: env.String("MINIO_SECRET_KEY", "minioadmin"),
+		MinioSSL:       env.Bool("MINIO_SSL", false),
+		MaxUploadSize:  env.Int64("MAX_UPLOAD_SIZE", 50<<20),
 	}
-}
-
-// getEnv retrieves the value of the environment variable named by the key.
-// It returns the value, which will be the fallback if the variable is not present.
-func getEnv(key, fallback string) string {
-	if value, ok := os.LookupEnv(key); ok {
-		return value
-	}
-	return fallback
-}
-
-// getEnvInt retrieves the value of the environment variable named by the key as an integer.
-// It returns the value, which will be the fallback if the variable is not present or cannot be parsed.
-func getEnvInt(key string, fallback int) int {
-	valueStr := getEnv(key, "")
-	if value, err := strconv.Atoi(valueStr); err == nil {
-		return value
-	}
-	return fallback
-}
-
-// getEnvInt64 retrieves the value of the environment variable named by the key as a 64-bit integer.
-// It returns the value, which will be the fallback if the variable is not present or cannot be parsed.
-func getEnvInt64(key string, fallback int64) int64 {
-	valueStr := getEnv(key, "")
-	if value, err := strconv.ParseInt(valueStr, 10, 64); err == nil {
-		return value
-	}
-	return fallback
-}
-
-// getEnvBool retrieves the value of the environment variable named by the key as a boolean.
-// It returns the value, which will be the fallback if the variable is not present or cannot be parsed.
-func getEnvBool(key string, fallback bool) bool {
-	valueStr := getEnv(key, "")
-	if value, err := strconv.ParseBool(valueStr); err == nil {
-		return value
-	}
-	return fallback
 }

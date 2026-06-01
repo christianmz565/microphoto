@@ -63,7 +63,7 @@ func main() {
 			log.Println("Worker shutting down gracefully")
 			return
 		default:
-			job, err := rClient.PopTaskReliable(ctx, "tasks")
+			job, rawData, err := rClient.PopTaskReliable(ctx, "tasks")
 			if err != nil {
 				if ctx.Err() != nil {
 					return
@@ -75,8 +75,14 @@ func main() {
 			log.Printf("Processing job %s (Type: %s, Parent: %s)", job.Id, job.Type, job.ParentId)
 			if err := processor.HandleJob(ctx, job); err != nil {
 				log.Printf("Error handling job %s: %v", job.Id, err)
+				// TODO: Implement retry logic or move to a failed queue
 				continue
 			}
+
+			if err := rClient.CompleteTask(ctx, "tasks", rawData); err != nil {
+				log.Printf("Error completing task %s: %v", job.Id, err)
+			}
+
 			log.Printf("Finished job %s", job.Id)
 		}
 	}
