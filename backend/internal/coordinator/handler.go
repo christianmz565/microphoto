@@ -3,6 +3,7 @@ package coordinator
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 
@@ -30,6 +31,27 @@ func NewHTTPHandler(orch *Orchestrator, m *metrics.Metrics, maxUploadSize int64)
 func (h *HTTPHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", h.HealthCheck)
 	mux.HandleFunc("/api/v1/process", h.ProcessImage)
+	mux.HandleFunc("/api/v1/result/", h.DownloadResult)
+}
+
+// DownloadResult serves the processed image for a given task ID.
+func (h *HTTPHandler) DownloadResult(w http.ResponseWriter, r *http.Request) {
+	taskID := r.URL.Path[len("/api/v1/result/"):]
+	if taskID == "" {
+		http.Error(w, "Task ID is required", http.StatusBadRequest)
+		return
+	}
+
+	reader, err := h.orchestrator.DownloadResult(r.Context(), taskID)
+	if err != nil {
+		log.Printf("Error downloading result for task %s: %v", taskID, err)
+		http.Error(w, "Result not found or not ready", http.StatusNotFound)
+		return
+	}
+	defer reader.Close()
+
+	w.Header().Set("Content-Type", "image/png")
+	io.Copy(w, reader)
 }
 
 // HealthCheck provides a simple health check endpoint.

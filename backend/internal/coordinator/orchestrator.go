@@ -120,3 +120,9 @@ func (o *Orchestrator) ProcessImage(ctx context.Context, file io.ReadSeeker, fil
 
 	return taskID, nil
 }
+
+// DownloadResult downloads the final processed image from MinIO.
+func (o *Orchestrator) DownloadResult(ctx context.Context, taskID string) (io.ReadCloser, error) {
+	path := fmt.Sprintf("%s/final.png", taskID)
+	return o.minio.DownloadObject(ctx, BucketName, path)
+}

@@ -30,7 +30,7 @@ func InitMetrics(serviceName string) (*Metrics, error) {
 	res, err := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
-			semconv.SchemaURL,
+			"",
 			semconv.ServiceName(serviceName),
 		),
 	)
