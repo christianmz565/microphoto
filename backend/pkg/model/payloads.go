@@ -2,6 +2,7 @@ package model
 
 type ProgressPayload struct {
 	JobID     string  `json:"job_id"`
+	WorkerID  string  `json:"worker_id,omitempty"`
 	Progress  float64 `json:"progress"`
 	Status    string  `json:"status"`
 	Message   string  `json:"message,omitempty"`

@@ -1,14 +1,20 @@
 import { IconDownload, IconRefresh } from '@tabler/icons-react';
 
+import { ProgressTracker } from '@/components/ProgressTracker';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface ResultPreviewProps {
   resultBlob: Blob;
   onReset: () => void;
+  taskID: string;
 }
 
-export function ResultPreview({ resultBlob, onReset }: ResultPreviewProps) {
+export function ResultPreview({
+  resultBlob,
+  onReset,
+  taskID,
+}: ResultPreviewProps) {
   const imageUrl = URL.createObjectURL(resultBlob);
 
   const handleDownload = () => {
@@ -19,27 +25,33 @@ export function ResultPreview({ resultBlob, onReset }: ResultPreviewProps) {
   };
 
   return (
-    <Card className="mx-auto w-full max-w-md">
-      <CardHeader>
-        <CardTitle>Resultado</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col items-center gap-4">
-        <img
-          src={imageUrl}
-          alt="Processed"
-          className="max-h-80 rounded-2xl object-contain"
-        />
-        <div className="flex gap-2">
-          <Button onClick={handleDownload}>
-            <IconDownload className="size-4" />
-            Descargar
-          </Button>
-          <Button variant="outline" onClick={onReset}>
-            <IconRefresh className="size-4" />
-            Procesar otra
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-6">
+      <Card className="mx-auto w-full max-w-md border-zinc-800 bg-black/40 backdrop-blur-xl">
+        <CardHeader>
+          <CardTitle className="text-sm font-medium tracking-tight text-zinc-400 uppercase">
+            Resultado
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center gap-6">
+          <img
+            src={imageUrl}
+            alt="Processed"
+            className="max-h-80 rounded-lg object-contain shadow-2xl"
+          />
+          <div className="flex w-full gap-3">
+            <Button onClick={handleDownload} className="flex-1">
+              <IconDownload className="size-4" />
+              Descargar
+            </Button>
+            <Button variant="outline" onClick={onReset} className="flex-1">
+              <IconRefresh className="size-4" />
+              Procesar otra
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <ProgressTracker taskID={taskID} />
+    </div>
   );
 }

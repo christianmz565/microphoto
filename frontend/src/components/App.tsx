@@ -1,39 +1,41 @@
-import { IconClock, IconPhoto } from "@tabler/icons-react";
-import { useCallback, useEffect, useState } from "react";
-import { FilterSelector } from "@/components/FilterSelector";
-import { ImageUploader } from "@/components/ImageUploader";
-import { ProgressTracker } from "@/components/ProgressTracker";
-import { ResultPreview } from "@/components/ResultPreview";
-import { TaskHistory } from "@/components/TaskHistory";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useSSE } from "@/hooks/useSSE";
-import { useTaskHistory } from "@/hooks/useTaskHistory";
-import type { FilterType } from "@/lib/api";
-import { getResult, uploadImage } from "@/lib/api";
+import { IconClock, IconPhoto } from '@tabler/icons-react';
+import { useCallback, useEffect, useState } from 'react';
+import { FilterSelector } from '@/components/FilterSelector';
+import { ImageUploader } from '@/components/ImageUploader';
+import { ProgressTracker } from '@/components/ProgressTracker';
+import { ResultPreview } from '@/components/ResultPreview';
+import { TaskHistory } from '@/components/TaskHistory';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useSSE } from '@/hooks/useSSE';
+import { useTaskHistory } from '@/hooks/useTaskHistory';
+import type { FilterType } from '@/lib/api';
+import { getResult, uploadImage } from '@/lib/api';
 
-type AppState = "idle" | "selected" | "processing" | "complete" | "failed";
+type AppState = 'idle' | 'selected' | 'processing' | 'complete' | 'failed';
 
 export default function App() {
-  const [state, setState] = useState<AppState>("idle");
+  const [state, setState] = useState<AppState>('idle');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [taskID, setTaskID] = useState<string | null>(null);
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const { addTask, updateStatus } = useTaskHistory();
-  const sse = useSSE(state === "processing" ? taskID : null);
+  const sse = useSSE(
+    state === 'processing' || state === 'complete' ? taskID : null,
+  );
 
   const handleImageSelect = useCallback((file: File) => {
     setImageFile(file);
-    setState("selected");
+    setState('selected');
   }, []);
 
   const handleFilterSelect = useCallback(
     async (type: FilterType, params: Record<string, string>) => {
       if (!imageFile) return;
 
-      setState("processing");
+      setState('processing');
       setError(null);
 
       try {
@@ -43,40 +45,40 @@ export default function App() {
           taskID: id,
           filename: imageFile.name,
           filterType: type,
-          status: "processing",
+          status: 'processing',
         });
       } catch (err) {
-        setState("failed");
-        setError(err instanceof Error ? err.message : "Error al subir");
+        setState('failed');
+        setError(err instanceof Error ? err.message : 'Error al subir');
       }
     },
     [imageFile, addTask],
   );
 
   useEffect(() => {
-    if (state !== "processing" || !taskID) return;
+    if (state !== 'processing' || !taskID) return;
 
-    if (sse.status === "JOB_COMPLETED") {
+    if (sse.status === 'JOB_COMPLETED') {
       getResult(taskID)
         .then((blob) => {
           setResultBlob(blob);
-          setState("complete");
-          updateStatus(taskID, "completed");
+          setState('complete');
+          updateStatus(taskID, 'completed');
         })
         .catch(() => {
-          setState("failed");
-          setError("Error al descargar resultado");
-          updateStatus(taskID, "failed");
+          setState('failed');
+          setError('Error al descargar resultado');
+          updateStatus(taskID, 'failed');
         });
-    } else if (sse.status === "JOB_FAILED") {
-      setState("failed");
-      setError(sse.message || "Error al procesar");
-      updateStatus(taskID, "failed");
+    } else if (sse.status === 'JOB_FAILED') {
+      setState('failed');
+      setError(sse.message || 'Error al procesar');
+      updateStatus(taskID, 'failed');
     }
   }, [state, taskID, sse.status, sse.message, updateStatus]);
 
   const handleReset = useCallback(() => {
-    setState("idle");
+    setState('idle');
     setImageFile(null);
     setTaskID(null);
     setResultBlob(null);
@@ -99,23 +101,27 @@ export default function App() {
         </TabsList>
 
         <TabsContent value="upload">
-          {state === "idle" && (
+          {state === 'idle' && (
             <ImageUploader onImageSelect={handleImageSelect} />
           )}
 
-          {state === "selected" && (
+          {state === 'selected' && (
             <FilterSelector onFilterSelect={handleFilterSelect} />
           )}
 
-          {state === "processing" && taskID && (
+          {state === 'processing' && taskID && (
             <ProgressTracker taskID={taskID} />
           )}
 
-          {state === "complete" && resultBlob && (
-            <ResultPreview resultBlob={resultBlob} onReset={handleReset} />
+          {state === 'complete' && resultBlob && taskID && (
+            <ResultPreview
+              resultBlob={resultBlob}
+              onReset={handleReset}
+              taskID={taskID}
+            />
           )}
 
-          {state === "failed" && (
+          {state === 'failed' && (
             <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4">
               <p className="text-destructive">{error}</p>
               <Button onClick={handleReset}>Intentar de nuevo</Button>

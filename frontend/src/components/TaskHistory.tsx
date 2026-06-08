@@ -3,15 +3,15 @@ import {
   IconDownload,
   IconPhoto,
   IconTrash,
-} from "@tabler/icons-react";
-import { useState } from "react";
+} from '@tabler/icons-react';
+import { useState } from 'react';
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { useTaskHistory } from "@/hooks/useTaskHistory";
-import { getResult } from "@/lib/api";
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { useTaskHistory } from '@/hooks/useTaskHistory';
+import { getResult } from '@/lib/api';
 
 export function TaskHistory() {
   const { tasks, removeTask, clearHistory } = useTaskHistory();
@@ -22,7 +22,7 @@ export function TaskHistory() {
     try {
       const blob = await getResult(taskID);
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
+      const a = document.createElement('a');
       a.href = url;
       a.download = `processed-${taskID.slice(0, 8)}.png`;
       a.click();
@@ -49,7 +49,7 @@ export function TaskHistory() {
     <div className="mx-auto flex w-full max-w-md flex-col gap-3">
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">
-          {tasks.length} tarea{tasks.length !== 1 ? "s" : ""}
+          {tasks.length} tarea{tasks.length !== 1 ? 's' : ''}
         </span>
         <Button variant="ghost" size="sm" onClick={clearHistory}>
           <IconTrash className="size-3" />
@@ -69,16 +69,16 @@ export function TaskHistory() {
             </div>
             <Badge
               variant={
-                task.status === "completed"
-                  ? "default"
-                  : task.status === "failed"
-                    ? "destructive"
-                    : "secondary"
+                task.status === 'completed'
+                  ? 'default'
+                  : task.status === 'failed'
+                    ? 'destructive'
+                    : 'secondary'
               }
             >
               {task.status}
             </Badge>
-            {task.status === "completed" && (
+            {task.status === 'completed' && (
               <Button
                 variant="ghost"
                 size="icon-xs"
