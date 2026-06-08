@@ -1,7 +1,7 @@
 import {
   IconAdjustments,
-  IconSun,
   IconBlur,
+  IconSun,
   IconZoom,
 } from '@tabler/icons-react';
 import { useState } from 'react';

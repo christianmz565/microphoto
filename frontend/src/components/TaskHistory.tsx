@@ -1,4 +1,9 @@
-import { IconClock, IconDownload, IconPhoto, IconTrash } from '@tabler/icons-react';
+import {
+  IconClock,
+  IconDownload,
+  IconPhoto,
+  IconTrash,
+} from '@tabler/icons-react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
