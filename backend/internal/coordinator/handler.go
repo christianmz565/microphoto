@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/christianmz565/microphoto/pkg/client/metrics"
+	"github.com/christianmz565/microphoto/pkg/model"
 	jobs "github.com/christianmz565/microphoto/proto/jobs/v1"
 	"github.com/google/uuid"
 )
@@ -67,8 +68,6 @@ func (h *HTTPHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 // StreamEvents handles SSE connections for task progress events.
-// It first sends all historical events stored in Redis, then subscribes to the
-// Pub/Sub channel for real-time updates.
 func (h *HTTPHandler) StreamEvents(w http.ResponseWriter, r *http.Request) {
 	taskID := strings.TrimPrefix(r.URL.Path, "/api/v1/events/")
 	if taskID == "" {
@@ -89,22 +88,26 @@ func (h *HTTPHandler) StreamEvents(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
+	pubsub, ch := h.orchestrator.redis.SubscribeProgress(ctx, taskID)
+	defer pubsub.Close()
+
 	events, err := h.orchestrator.redis.GetProgressEvents(ctx, taskID)
 	if err != nil {
 		log.Printf("Error getting progress events for task %s: %v", taskID, err)
 	}
 
+	var lastTimestamp int64
 	for _, event := range events {
 		data, err := json.Marshal(event)
 		if err != nil {
 			continue
 		}
 		fmt.Fprintf(w, "data: %s\n\n", data)
+		if event.Timestamp > lastTimestamp {
+			lastTimestamp = event.Timestamp
+		}
 	}
 	flusher.Flush()
-
-	pubsub, ch := h.orchestrator.redis.SubscribeProgress(ctx, taskID)
-	defer pubsub.Close()
 
 	keepalive := time.NewTicker(15 * time.Second)
 	defer keepalive.Stop()
@@ -117,6 +120,14 @@ func (h *HTTPHandler) StreamEvents(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
+
+			var event model.ProgressPayload
+			if err := json.Unmarshal([]byte(msg.Payload), &event); err == nil {
+				if event.Timestamp <= lastTimestamp {
+					continue
+				}
+			}
+
 			fmt.Fprintf(w, "data: %s\n\n", msg.Payload)
 			flusher.Flush()
 		case <-keepalive.C:

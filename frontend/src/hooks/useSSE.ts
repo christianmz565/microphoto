@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
-import { connectToEvents } from '@/lib/api';
+import { connectToEvents } from "@/lib/api";
 
 export interface SSEState {
   progress: number;
@@ -12,26 +12,34 @@ export interface SSEState {
 
 const initialState: SSEState = {
   progress: 0,
-  status: '',
-  message: '',
+  status: "",
+  message: "",
   isConnected: false,
   error: null,
 };
 
 export function useSSE(taskID: string | null) {
   const [state, setState] = useState<SSEState>(initialState);
+  const [retryCount, setRetryCount] = useState(0);
 
   const reset = useCallback(() => {
     setState(initialState);
+    setRetryCount(0);
   }, []);
 
   useEffect(() => {
     if (!taskID) return;
 
+    if (state.status === "JOB_COMPLETED" || state.status === "JOB_FAILED") {
+      return;
+    }
+
+    let timer: NodeJS.Timeout;
     const eventSource = connectToEvents(taskID);
 
     eventSource.onopen = () => {
-      setState((prev) => ({ ...prev, isConnected: true }));
+      setState((prev) => ({ ...prev, isConnected: true, error: null }));
+      setRetryCount(0);
     };
 
     eventSource.onmessage = (event) => {
@@ -47,24 +55,24 @@ export function useSSE(taskID: string | null) {
           status: data.status ?? prev.status,
           message: data.message ?? prev.message,
         }));
-      } catch {
-        // ignore malformed events
-      }
+      } catch {}
     };
 
     eventSource.onerror = () => {
-      setState((prev) => ({
-        ...prev,
-        isConnected: false,
-        error: 'Connection lost',
-      }));
       eventSource.close();
+      setState((prev) => ({ ...prev, isConnected: false }));
+
+      const delay = Math.min(1000 * 2 ** retryCount, 30000);
+      timer = setTimeout(() => {
+        setRetryCount((c) => c + 1);
+      }, delay);
     };
 
     return () => {
       eventSource.close();
+      if (timer) clearTimeout(timer);
     };
-  }, [taskID]);
+  }, [taskID, retryCount, state.status]);
 
   return { ...state, reset };
 }

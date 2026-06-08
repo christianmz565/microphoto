@@ -53,6 +53,11 @@ func main() {
 		log.Fatalf("Failed to ensure bucket: %v", err)
 	}
 
+	err = mClient.SetupLifecyclePolicy(context.Background(), coordinator.BucketName)
+	if err != nil {
+		log.Printf("Warning: Failed to setup lifecycle policy: %v", err)
+	}
+
 	orch := coordinator.NewOrchestrator(rClient, mClient, m)
 	handler := coordinator.NewHTTPHandler(orch, m, cfg.MaxUploadSize)
 

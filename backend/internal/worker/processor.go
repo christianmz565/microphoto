@@ -50,19 +50,32 @@ func NewProcessor(r *redis.Client, m *minio.Client, mt *metrics.Metrics, workerI
 // HandleJob dispatches the job to the appropriate handler based on its type.
 func (p *Processor) HandleJob(ctx context.Context, job *jobs.Job) error {
 	startTime := time.Now()
+	var err error
+
 	defer func() {
 		p.metrics.RecordTaskDuration(ctx, p.workerID, time.Since(startTime).Seconds())
 		p.metrics.RecordTaskProcessed(ctx, p.workerID, job.Type.String())
+
+		if err != nil {
+			// Terminal error: notify the frontend
+			p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+				JobID:   job.ParentId,
+				Status:  "JOB_FAILED",
+				Message: fmt.Sprintf("Error in %s: %v", job.Type.String(), err),
+			})
+		}
 	}()
 
 	switch job.Type {
 	case jobs.JobType_JOB_TYPE_SLICE:
-		return p.handleSlice(ctx, job)
+		err = p.handleSlice(ctx, job)
 	case jobs.JobType_JOB_TYPE_RECONSTRUCT:
-		return p.handleReconstruct(ctx, job)
+		err = p.handleReconstruct(ctx, job)
 	default:
-		return p.handleProcess(ctx, job)
+		err = p.handleProcess(ctx, job)
 	}
+
+	return err
 }
 
 func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {

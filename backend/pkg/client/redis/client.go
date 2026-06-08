@@ -102,6 +102,9 @@ func (c *Client) DecrementCounter(ctx context.Context, taskID string) (int64, er
 
 // PublishProgress serializes progress to JSON, appends it to the history list, and publishes it to the {"global"}:progress:{taskID} channel
 func (c *Client) PublishProgress(ctx context.Context, taskID string, payload model.ProgressPayload) error {
+	if payload.Timestamp == 0 {
+		payload.Timestamp = time.Now().UnixNano()
+	}
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal progress: %w", err)
