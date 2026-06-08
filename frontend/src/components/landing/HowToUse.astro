@@ -1,0 +1,45 @@
+---
+const steps = [
+  {
+    title: 'Sube una imagen',
+    description: 'Arrastra o selecciona una imagen (PNG, JPG, GIF hasta 50MB)',
+  },
+  {
+    title: 'Selecciona un filtro',
+    description:
+      'Elige entre escala de grises, desenfoque, brillo o redimensionar',
+  },
+  {
+    title: 'Configura los parámetros',
+    description:
+      'Ajusta los valores según el filtro elegido (radio, factor, dimensiones)',
+  },
+  {
+    title: 'Descarga el resultado',
+    description: 'Visualiza la imagen procesada y descárgala con un clic',
+  },
+];
+---
+
+<section class="dark relative border-b border-white/5 px-6 py-24">
+  <div class="mx-auto max-w-5xl">
+    <div class="mb-12 text-center">
+      <span class="mb-3 inline-block text-xs font-semibold uppercase tracking-widest text-primary/70">Uso</span>
+      <h3 class="text-3xl font-bold tracking-tight sm:text-4xl">Cómo funciona</h3>
+    </div>
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      {steps.map((step, i) => (
+        <div class="relative flex flex-col gap-4">
+          <div class="flex items-center gap-3">
+            <div class="flex size-8 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-xs font-bold text-primary">{String(i + 1).padStart(2, '0')}</div>
+            {i < steps.length - 1 && <div class="h-px flex-1 bg-gradient-to-r from-primary/20 to-transparent" />}
+          </div>
+          <div>
+            <h4 class="mb-1.5 font-semibold">{step.title}</h4>
+            <p class="text-sm leading-relaxed text-muted-foreground">{step.description}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

@@ -1,0 +1,30 @@
+---
+const techs = [
+  { name: 'Go', role: 'Backend' },
+  { name: 'React', role: 'Frontend' },
+  { name: 'Redis', role: 'Cola de tareas' },
+  { name: 'MinIO', role: 'Almacenamiento' },
+  { name: 'Docker', role: 'Containerización' },
+  { name: 'Kubernetes', role: 'Orquestación' },
+  { name: 'Prometheus', role: 'Métricas' },
+  { name: 'Grafana', role: 'Dashboards' },
+];
+---
+
+<section class="dark relative border-b border-white/5 px-6 py-24">
+  <div class="absolute inset-0 bg-gradient-to-b from-transparent to-primary/[0.03]" />
+  <div class="relative mx-auto max-w-5xl">
+    <div class="mb-12 text-center">
+      <span class="mb-3 inline-block text-xs font-semibold uppercase tracking-widest text-primary/70">Tecnología</span>
+      <h3 class="text-3xl font-bold tracking-tight sm:text-4xl">Stack</h3>
+    </div>
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {techs.map((tech) => (
+        <div class="flex flex-col items-center gap-1 rounded-xl border border-white/5 bg-white/[0.02] px-4 py-4 transition-all hover:border-primary/20 hover:bg-white/[0.04]">
+          <span class="text-sm font-semibold">{tech.name}</span>
+          <span class="text-xs text-muted-foreground">{tech.role}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

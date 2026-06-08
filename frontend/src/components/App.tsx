@@ -87,7 +87,7 @@ export default function App() {
   }, [sse]);
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center p-6">
+    <main className="dark flex min-h-[calc(100vh-57px)] flex-col items-center justify-center p-6">
       <Tabs defaultValue="upload" className="w-full max-w-md">
         <TabsList className="mb-6 w-full">
           <TabsTrigger value="upload" className="flex-1">

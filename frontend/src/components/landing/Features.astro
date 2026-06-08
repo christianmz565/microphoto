@@ -1,0 +1,59 @@
+---
+const features = [
+  {
+    title: 'Procesamiento paralelo',
+    description:
+      'Las imágenes se dividen en fragmentos y se procesan concurrentemente entre múltiples workers.',
+    icon: 'stack',
+  },
+  {
+    title: 'Tolerancia a fallos',
+    description:
+      'Un servicio reaper detecta tareas atascadas y las reprograma automáticamente.',
+    icon: 'refresh',
+  },
+  {
+    title: 'Observabilidad',
+    description:
+      'Métricas de Prometheus y dashboards de Grafana en tiempo real.',
+    icon: 'chart',
+  },
+  {
+    title: 'Escalable',
+    description:
+      'Los workers son stateless y se pueden escalar horizontalmente según la carga.',
+    icon: 'server',
+  },
+];
+---
+
+<section id="features" class="dark relative border-b border-white/5 px-6 py-24">
+  <div class="mx-auto max-w-5xl">
+    <div class="mb-12 text-center">
+      <span class="mb-3 inline-block text-xs font-semibold uppercase tracking-widest text-primary/70">Características</span>
+      <h3 class="text-3xl font-bold tracking-tight sm:text-4xl">Diseñado para escalar</h3>
+    </div>
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {features.map((f) => (
+        <div class="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-6 transition-all hover:border-primary/20 hover:bg-white/[0.04]">
+          <div class="mb-4 flex size-10 items-center justify-center rounded-xl bg-primary/10 transition-colors group-hover:bg-primary/20">
+            {f.icon === 'stack' && (
+              <svg class="size-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20"/><path d="m8 16 4-4 4 4"/><path d="m8 8 4 4 4-4"/></svg>
+            )}
+            {f.icon === 'refresh' && (
+              <svg class="size-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+            )}
+            {f.icon === 'chart' && (
+              <svg class="size-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+            )}
+            {f.icon === 'server' && (
+              <svg class="size-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>
+            )}
+          </div>
+          <h4 class="mb-2 font-semibold">{f.title}</h4>
+          <p class="text-sm leading-relaxed text-muted-foreground">{f.description}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

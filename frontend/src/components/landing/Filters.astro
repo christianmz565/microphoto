@@ -1,0 +1,43 @@
+---
+const filters = [
+  {
+    title: 'Escala de grises',
+    description: 'Convierte la imagen a blanco y negro.',
+    icon: '◐',
+  },
+  {
+    title: 'Desenfoque',
+    description: 'Aplica un desenfoque gaussiano con radio configurable.',
+    icon: '◎',
+  },
+  {
+    title: 'Brillo',
+    description: 'Ajusta el brillo con un factor multiplicativo.',
+    icon: '☀',
+  },
+  {
+    title: 'Redimensionar',
+    description: 'Cambia las dimensiones de la imagen.',
+    icon: '⊞',
+  },
+];
+---
+
+<section class="dark relative border-b border-white/5 px-6 py-24">
+  <div class="absolute inset-0 bg-gradient-to-b from-primary/[0.03] to-transparent" />
+  <div class="relative mx-auto max-w-5xl">
+    <div class="mb-12 text-center">
+      <span class="mb-3 inline-block text-xs font-semibold uppercase tracking-widest text-primary/70">Filtros</span>
+      <h3 class="text-3xl font-bold tracking-tight sm:text-4xl">Cuatro operaciones disponibles</h3>
+    </div>
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {filters.map((f) => (
+        <div class="group rounded-2xl border border-white/5 bg-white/[0.02] p-6 transition-all hover:border-primary/20 hover:bg-white/[0.04]">
+          <div class="mb-4 text-3xl text-primary/60 transition-colors group-hover:text-primary">{f.icon}</div>
+          <h4 class="mb-2 font-semibold">{f.title}</h4>
+          <p class="text-sm leading-relaxed text-muted-foreground">{f.description}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
