@@ -39,8 +39,8 @@ export function TaskHistory() {
       <Card className="mx-auto w-full max-w-md">
         <CardContent className="flex flex-col items-center gap-3 py-12 text-muted-foreground">
           <IconPhoto className="size-10" />
-          <p>No tasks yet</p>
-          <p className="text-xs">Upload an image to get started</p>
+          <p>No hay tareas aún</p>
+          <p className="text-xs">Sube una imagen para comenzar</p>
         </CardContent>
       </Card>
     );
@@ -50,11 +50,11 @@ export function TaskHistory() {
     <div className="mx-auto flex w-full max-w-md flex-col gap-3">
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">
-          {tasks.length} task{tasks.length !== 1 ? 's' : ''}
+          {tasks.length} tarea{tasks.length !== 1 ? 's' : ''}
         </span>
         <Button variant="ghost" size="sm" onClick={clearHistory}>
           <IconTrash className="size-3" />
-          Clear
+          Limpiar
         </Button>
       </div>
 

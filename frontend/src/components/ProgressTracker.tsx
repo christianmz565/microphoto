@@ -15,10 +15,10 @@ interface ProgressTrackerProps {
 }
 
 const steps = [
-  { key: 'uploaded', label: 'Uploaded', icon: IconPhoto },
-  { key: 'slicing', label: 'Slicing image', icon: IconScissors },
-  { key: 'processing', label: 'Processing fragments', icon: IconStack2 },
-  { key: 'reconstructing', label: 'Reconstructing', icon: IconStack2 },
+  { key: 'uploaded', label: 'Subido', icon: IconPhoto },
+  { key: 'slicing', label: 'Cortando imagen', icon: IconScissors },
+  { key: 'processing', label: 'Procesando fragmentos', icon: IconStack2 },
+  { key: 'reconstructing', label: 'Reconstruyendo', icon: IconStack2 },
 ] as const;
 
 export function ProgressTracker({ taskID }: ProgressTrackerProps) {
@@ -37,7 +37,7 @@ export function ProgressTracker({ taskID }: ProgressTrackerProps) {
   return (
     <Card className="mx-auto w-full max-w-md">
       <CardHeader>
-        <CardTitle>Processing</CardTitle>
+        <CardTitle>Procesando</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <Progress value={progress * 100} />
@@ -72,7 +72,7 @@ export function ProgressTracker({ taskID }: ProgressTrackerProps) {
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {!isConnected && !error && (
-          <p className="text-sm text-muted-foreground">Connecting...</p>
+          <p className="text-sm text-muted-foreground">Conectando...</p>
         )}
       </CardContent>
     </Card>

@@ -47,7 +47,7 @@ export default function App() {
         });
       } catch (err) {
         setState('failed');
-        setError(err instanceof Error ? err.message : 'Upload failed');
+        setError(err instanceof Error ? err.message : 'Error al subir');
       }
     },
     [imageFile, addTask],
@@ -65,7 +65,7 @@ export default function App() {
       })
       .catch(() => {
         setState('failed');
-        setError('Failed to download result');
+        setError('Error al descargar resultado');
         updateStatus(currentTaskID, 'failed');
       });
   }
@@ -73,7 +73,7 @@ export default function App() {
   if (state === 'processing' && sse.status === 'failed' && taskID) {
     const currentTaskID = taskID;
     setState('failed');
-    setError(sse.message || 'Processing failed');
+    setError(sse.message || 'Error al procesar');
     updateStatus(currentTaskID, 'failed');
   }
 
@@ -92,11 +92,11 @@ export default function App() {
         <TabsList className="mb-6 w-full">
           <TabsTrigger value="upload" className="flex-1">
             <IconPhoto className="size-4" />
-            Upload
+            Subir
           </TabsTrigger>
           <TabsTrigger value="history" className="flex-1">
             <IconClock className="size-4" />
-            History
+            Historial
           </TabsTrigger>
         </TabsList>
 
@@ -120,7 +120,7 @@ export default function App() {
           {state === 'failed' && (
             <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4">
               <p className="text-destructive">{error}</p>
-              <Button onClick={handleReset}>Try again</Button>
+              <Button onClick={handleReset}>Intentar de nuevo</Button>
             </div>
           )}
         </TabsContent>

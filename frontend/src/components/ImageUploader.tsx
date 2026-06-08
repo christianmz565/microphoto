@@ -64,7 +64,7 @@ export function ImageUploader({ onImageSelect }: ImageUploaderProps) {
               setFilename(null);
             }}
           >
-            Choose a different image
+            Elegir otra imagen
           </Button>
         </CardContent>
       </Card>
@@ -83,9 +83,11 @@ export function ImageUploader({ onImageSelect }: ImageUploaderProps) {
           <IconUpload className="size-8 text-muted-foreground" />
         </div>
         <div className="text-center">
-          <p className="font-medium">Drop an image here or click to browse</p>
+          <p className="font-medium">
+            Arrastra una imagen aquí o haz clic para buscar
+          </p>
           <p className="text-sm text-muted-foreground">
-            PNG, JPG, GIF up to 50MB
+            PNG, JPG, GIF hasta 50MB
           </p>
         </div>
         <input

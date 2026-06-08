@@ -20,10 +20,10 @@ const filters: {
   label: string;
   icon: typeof IconAdjustments;
 }[] = [
-  { type: 'GRAYSCALE', label: 'Grayscale', icon: IconAdjustments },
-  { type: 'BLUR', label: 'Blur', icon: IconBlur },
-  { type: 'BRIGHTNESS', label: 'Brightness', icon: IconSun },
-  { type: 'RESIZE', label: 'Resize', icon: IconZoom },
+  { type: 'GRAYSCALE', label: 'Escala de grises', icon: IconAdjustments },
+  { type: 'BLUR', label: 'Desenfoque', icon: IconBlur },
+  { type: 'BRIGHTNESS', label: 'Brillo', icon: IconSun },
+  { type: 'RESIZE', label: 'Redimensionar', icon: IconZoom },
 ];
 
 export function FilterSelector({ onFilterSelect }: FilterSelectorProps) {
@@ -48,7 +48,7 @@ export function FilterSelector({ onFilterSelect }: FilterSelectorProps) {
   return (
     <Card className="mx-auto w-full max-w-md">
       <CardHeader>
-        <CardTitle>Select filter</CardTitle>
+        <CardTitle>Seleccionar filtro</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-2">
@@ -113,7 +113,7 @@ export function FilterSelector({ onFilterSelect }: FilterSelectorProps) {
                 htmlFor="resize-width"
                 className="text-sm text-muted-foreground"
               >
-                Width
+                width
               </label>
               <Input
                 id="resize-width"
@@ -129,7 +129,7 @@ export function FilterSelector({ onFilterSelect }: FilterSelectorProps) {
                 htmlFor="resize-height"
                 className="text-sm text-muted-foreground"
               >
-                Height
+                height
               </label>
               <Input
                 id="resize-height"
@@ -144,7 +144,7 @@ export function FilterSelector({ onFilterSelect }: FilterSelectorProps) {
         )}
 
         <Button size="lg" disabled={!selected} onClick={handleProcess}>
-          Process
+          Procesar
         </Button>
       </CardContent>
     </Card>

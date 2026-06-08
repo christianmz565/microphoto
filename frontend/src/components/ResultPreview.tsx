@@ -21,7 +21,7 @@ export function ResultPreview({ resultBlob, onReset }: ResultPreviewProps) {
   return (
     <Card className="mx-auto w-full max-w-md">
       <CardHeader>
-        <CardTitle>Result</CardTitle>
+        <CardTitle>Resultado</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col items-center gap-4">
         <img
@@ -32,11 +32,11 @@ export function ResultPreview({ resultBlob, onReset }: ResultPreviewProps) {
         <div className="flex gap-2">
           <Button onClick={handleDownload}>
             <IconDownload className="size-4" />
-            Download
+            Descargar
           </Button>
           <Button variant="outline" onClick={onReset}>
             <IconRefresh className="size-4" />
-            Process another
+            Procesar otra
           </Button>
         </div>
       </CardContent>
