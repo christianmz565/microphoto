@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/christianmz565/microphoto/pkg/client/metrics"
@@ -35,6 +37,7 @@ func (h *HTTPHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", h.HealthCheck)
 	mux.HandleFunc("/api/v1/process", h.ProcessImage)
 	mux.HandleFunc("/api/v1/result/", h.DownloadResult)
+	mux.HandleFunc("/api/v1/events/", h.StreamEvents)
 }
 
 // DownloadResult serves the processed image for a given task ID.
@@ -61,6 +64,66 @@ func (h *HTTPHandler) DownloadResult(w http.ResponseWriter, r *http.Request) {
 func (h *HTTPHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
+}
+
+// StreamEvents handles SSE connections for task progress events.
+// It first sends all historical events stored in Redis, then subscribes to the
+// Pub/Sub channel for real-time updates.
+func (h *HTTPHandler) StreamEvents(w http.ResponseWriter, r *http.Request) {
+	taskID := strings.TrimPrefix(r.URL.Path, "/api/v1/events/")
+	if taskID == "" {
+		http.Error(w, "Task ID is required", http.StatusBadRequest)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	ctx := r.Context()
+
+	events, err := h.orchestrator.redis.GetProgressEvents(ctx, taskID)
+	if err != nil {
+		log.Printf("Error getting progress events for task %s: %v", taskID, err)
+	}
+
+	for _, event := range events {
+		data, err := json.Marshal(event)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(w, "data: %s\n\n", data)
+	}
+	flusher.Flush()
+
+	pubsub, ch := h.orchestrator.redis.SubscribeProgress(ctx, taskID)
+	defer pubsub.Close()
+
+	keepalive := time.NewTicker(15 * time.Second)
+	defer keepalive.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			fmt.Fprintf(w, "data: %s\n\n", msg.Payload)
+			flusher.Flush()
+		case <-keepalive.C:
+			fmt.Fprintf(w, ": keepalive\n\n")
+			flusher.Flush()
+		}
+	}
 }
 
 // ProcessImage handles the multipart form upload of an image for processing.

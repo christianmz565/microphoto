@@ -100,15 +100,54 @@ func (c *Client) DecrementCounter(ctx context.Context, taskID string) (int64, er
 	return c.rdb.Decr(ctx, counterKey).Result()
 }
 
-// PublishProgress serializes progress to JSON and publishes it to the {"global"}:progress:{taskID} channel
+// PublishProgress serializes progress to JSON, appends it to the history list, and publishes it to the {"global"}:progress:{taskID} channel
 func (c *Client) PublishProgress(ctx context.Context, taskID string, payload model.ProgressPayload) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal progress: %w", err)
 	}
 
+	listKey := fmt.Sprintf(`{"global"}:events:%s`, taskID)
 	channel := fmt.Sprintf(`{"global"}:progress:%s`, taskID)
-	return c.rdb.Publish(ctx, channel, data).Err()
+
+	pipe := c.rdb.Pipeline()
+	pipe.RPush(ctx, listKey, data)
+	pipe.Publish(ctx, channel, data)
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("publish progress: %w", err)
+	}
+
+	return nil
+}
+
+// GetProgressEvents returns all stored progress events for a task from the {"global"}:events:{taskID} list
+func (c *Client) GetProgressEvents(ctx context.Context, taskID string) ([]model.ProgressPayload, error) {
+	listKey := fmt.Sprintf(`{"global"}:events:%s`, taskID)
+
+	items, err := c.rdb.LRange(ctx, listKey, 0, -1).Result()
+	if err != nil {
+		return nil, fmt.Errorf("lrange events: %w", err)
+	}
+
+	events := make([]model.ProgressPayload, 0, len(items))
+	for _, item := range items {
+		var payload model.ProgressPayload
+		if err := json.Unmarshal([]byte(item), &payload); err != nil {
+			continue
+		}
+		events = append(events, payload)
+	}
+
+	return events, nil
+}
+
+// SubscribeProgress subscribes to the {"global"}:progress:{taskID} Pub/Sub channel
+func (c *Client) SubscribeProgress(ctx context.Context, taskID string) (*redis.PubSub, <-chan *redis.Message) {
+	channel := fmt.Sprintf(`{"global"}:progress:%s`, taskID)
+	pubsub := c.rdb.Subscribe(ctx, channel)
+	ch := pubsub.Channel()
+	return pubsub, ch
 }
 
 // InitializeTask sets the {"global"}:subtasks:{taskID} and {"global"}:attempts:{taskID} counters
