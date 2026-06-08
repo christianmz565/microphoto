@@ -1,0 +1,10 @@
+---
+import App from '@/components/App.tsx';
+import Header from '@/components/Header.astro';
+import Layout from '@/layouts/Layout.astro';
+---
+
+<Layout>
+  <Header />
+  <App client:load />
+</Layout>

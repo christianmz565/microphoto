@@ -1,10 +1,22 @@
 ---
-import App from '@/components/App.tsx';
-import Header from '@/components/Header.astro';
+import Features from '@/components/landing/Features.astro';
+import Filters from '@/components/landing/Filters.astro';
+import Footer from '@/components/landing/Footer.astro';
+import Hero from '@/components/landing/Hero.astro';
+import HowItWorks from '@/components/landing/HowItWorks.astro';
+import HowToUse from '@/components/landing/HowToUse.astro';
+import Nav from '@/components/landing/Nav.astro';
+import Stack from '@/components/landing/Stack.astro';
 import Layout from '@/layouts/Layout.astro';
 ---
 
 <Layout>
-  <Header />
-  <App client:load />
+  <Nav />
+  <Hero />
+  <Features />
+  <HowItWorks />
+  <Filters />
+  <HowToUse />
+  <Stack />
+  <Footer />
 </Layout>

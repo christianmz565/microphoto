@@ -1,0 +1,23 @@
+---
+const techs = [
+  'Go',
+  'React',
+  'Redis',
+  'MinIO',
+  'Docker',
+  'Kubernetes',
+  'Prometheus',
+  'Grafana',
+];
+---
+
+<section class="border-t px-6 py-16">
+  <div class="mx-auto max-w-4xl">
+    <h3 class="mb-8 text-center text-2xl font-semibold">Stack tecnológico</h3>
+    <div class="flex flex-wrap items-center justify-center gap-6">
+      {techs.map((tech) => (
+        <span class="rounded-full border bg-muted/50 px-4 py-2 text-sm font-medium">{tech}</span>
+      ))}
+    </div>
+  </div>
+</section>

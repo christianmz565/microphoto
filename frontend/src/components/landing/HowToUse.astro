@@ -1,0 +1,37 @@
+---
+const steps = [
+  {
+    title: 'Sube una imagen',
+    description: 'Arrastra o selecciona una imagen (PNG, JPG, GIF hasta 50MB)',
+  },
+  {
+    title: 'Selecciona un filtro',
+    description:
+      'Elige entre escala de grises, desenfoque, brillo o redimensionar',
+  },
+  {
+    title: 'Configura los parámetros',
+    description:
+      'Ajusta los valores según el filtro elegido (radio, factor, dimensiones)',
+  },
+  {
+    title: 'Descarga el resultado',
+    description: 'Visualiza la imagen procesada y descárgala con un clic',
+  },
+];
+---
+
+<section class="border-t bg-muted/30 px-6 py-16">
+  <div class="mx-auto max-w-4xl">
+    <h3 class="mb-8 text-center text-2xl font-semibold">Cómo usarlo</h3>
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      {steps.map((step, i) => (
+        <div class="flex flex-col items-center gap-3 text-center">
+          <div class="flex size-12 items-center justify-center rounded-full border-2 border-primary text-lg font-bold text-primary">{i + 1}</div>
+          <h4 class="font-medium">{step.title}</h4>
+          <p class="text-sm text-muted-foreground">{step.description}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
