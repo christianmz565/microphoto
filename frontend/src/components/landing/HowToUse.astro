@@ -21,15 +21,23 @@ const steps = [
 ];
 ---
 
-<section class="border-t bg-muted/30 px-6 py-16">
-  <div class="mx-auto max-w-4xl">
-    <h3 class="mb-8 text-center text-2xl font-semibold">Cómo usarlo</h3>
+<section class="dark relative border-b border-white/5 px-6 py-24">
+  <div class="mx-auto max-w-5xl">
+    <div class="mb-12 text-center">
+      <span class="mb-3 inline-block text-xs font-semibold uppercase tracking-widest text-primary/70">Uso</span>
+      <h3 class="text-3xl font-bold tracking-tight sm:text-4xl">Cómo funciona</h3>
+    </div>
     <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
       {steps.map((step, i) => (
-        <div class="flex flex-col items-center gap-3 text-center">
-          <div class="flex size-12 items-center justify-center rounded-full border-2 border-primary text-lg font-bold text-primary">{i + 1}</div>
-          <h4 class="font-medium">{step.title}</h4>
-          <p class="text-sm text-muted-foreground">{step.description}</p>
+        <div class="relative flex flex-col gap-4">
+          <div class="flex items-center gap-3">
+            <div class="flex size-8 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-xs font-bold text-primary">{String(i + 1).padStart(2, '0')}</div>
+            {i < steps.length - 1 && <div class="h-px flex-1 bg-gradient-to-r from-primary/20 to-transparent" />}
+          </div>
+          <div>
+            <h4 class="mb-1.5 font-semibold">{step.title}</h4>
+            <p class="text-sm leading-relaxed text-muted-foreground">{step.description}</p>
+          </div>
         </div>
       ))}
     </div>
