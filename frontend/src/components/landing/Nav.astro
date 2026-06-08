@@ -1,4 +1,9 @@
 ---
+interface Props {
+  showCta?: boolean;
+}
+
+const { showCta = true } = Astro.props;
 ---
 
 <nav class="dark flex items-center justify-between border-b border-white/5 px-6 py-4 backdrop-blur-sm">
@@ -10,11 +15,13 @@
   </div>
   <div class="flex items-center gap-6">
     <a href="/" class="text-sm font-medium text-foreground/80 transition-colors hover:text-foreground">Inicio</a>
-    <a
-      href="/app"
-      class="rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary transition-all hover:bg-primary/20 hover:border-primary/50"
-    >
-      Procesar
-    </a>
+    {showCta && (
+      <a
+        href="/app"
+        class="rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary transition-all hover:bg-primary/20 hover:border-primary/50"
+      >
+        Procesar
+      </a>
+    )}
   </div>
 </nav>
