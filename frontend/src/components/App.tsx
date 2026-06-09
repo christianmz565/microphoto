@@ -1,5 +1,5 @@
 import { IconClock, IconPhoto } from '@tabler/icons-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { FilterSelector } from '@/components/FilterSelector';
 import { ImageUploader } from '@/components/ImageUploader';
 import { ProgressTracker } from '@/components/ProgressTracker';
@@ -22,7 +22,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const { addTask, updateStatus } = useTaskHistory();
-  const sse = useSSE(state === 'processing' ? taskID : null);
+  const sse = useSSE(
+    state === 'processing' || state === 'complete' ? taskID : null,
+  );
 
   const handleImageSelect = useCallback((file: File) => {
     setImageFile(file);
@@ -53,29 +55,27 @@ export default function App() {
     [imageFile, addTask],
   );
 
-  // Watch SSE for completion
-  if (state === 'processing' && sse.status === 'completed' && taskID) {
-    const currentTaskID = taskID;
-    // Fetch result
-    getResult(currentTaskID)
-      .then((blob) => {
-        setResultBlob(blob);
-        setState('complete');
-        updateStatus(currentTaskID, 'completed');
-      })
-      .catch(() => {
-        setState('failed');
-        setError('Error al descargar resultado');
-        updateStatus(currentTaskID, 'failed');
-      });
-  }
+  useEffect(() => {
+    if (state !== 'processing' || !taskID) return;
 
-  if (state === 'processing' && sse.status === 'failed' && taskID) {
-    const currentTaskID = taskID;
-    setState('failed');
-    setError(sse.message || 'Error al procesar');
-    updateStatus(currentTaskID, 'failed');
-  }
+    if (sse.status === 'JOB_COMPLETED') {
+      getResult(taskID)
+        .then((blob) => {
+          setResultBlob(blob);
+          setState('complete');
+          updateStatus(taskID, 'completed');
+        })
+        .catch(() => {
+          setState('failed');
+          setError('Error al descargar resultado');
+          updateStatus(taskID, 'failed');
+        });
+    } else if (sse.status === 'JOB_FAILED') {
+      setState('failed');
+      setError(sse.message || 'Error al procesar');
+      updateStatus(taskID, 'failed');
+    }
+  }, [state, taskID, sse.status, sse.message, updateStatus]);
 
   const handleReset = useCallback(() => {
     setState('idle');
@@ -113,8 +113,12 @@ export default function App() {
             <ProgressTracker taskID={taskID} />
           )}
 
-          {state === 'complete' && resultBlob && (
-            <ResultPreview resultBlob={resultBlob} onReset={handleReset} />
+          {state === 'complete' && resultBlob && taskID && (
+            <ResultPreview
+              resultBlob={resultBlob}
+              onReset={handleReset}
+              taskID={taskID}
+            />
           )}
 
           {state === 'failed' && (

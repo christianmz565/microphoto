@@ -50,26 +50,42 @@ func NewProcessor(r *redis.Client, m *minio.Client, mt *metrics.Metrics, workerI
 // HandleJob dispatches the job to the appropriate handler based on its type.
 func (p *Processor) HandleJob(ctx context.Context, job *jobs.Job) error {
 	startTime := time.Now()
+	var err error
+
 	defer func() {
 		p.metrics.RecordTaskDuration(ctx, p.workerID, time.Since(startTime).Seconds())
 		p.metrics.RecordTaskProcessed(ctx, p.workerID, job.Type.String())
+
+		if err != nil {
+			// Terminal error: notify the frontend
+			p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+				JobID:    job.ParentId,
+				WorkerID: p.workerID,
+				Status:   "JOB_FAILED",
+				Message:  fmt.Sprintf("Error in %s: %v", job.Type.String(), err),
+			})
+		}
 	}()
 
 	switch job.Type {
 	case jobs.JobType_JOB_TYPE_SLICE:
-		return p.handleSlice(ctx, job)
+		err = p.handleSlice(ctx, job)
 	case jobs.JobType_JOB_TYPE_RECONSTRUCT:
-		return p.handleReconstruct(ctx, job)
+		err = p.handleReconstruct(ctx, job)
 	default:
-		return p.handleProcess(ctx, job)
+		err = p.handleProcess(ctx, job)
 	}
+
+	return err
 }
 
 func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
-		JobID:   job.ParentId,
-		Status:  "START_SLICING",
-		Message: fmt.Sprintf("Worker %s started slicing for task %s", p.workerID, job.ParentId),
+		JobID:    job.ParentId,
+		WorkerID: p.workerID,
+		Status:   "SLICING",
+		Progress: 0.05,
+		Message:  "Dividiendo la imagen para procesamiento paralelo...",
 	})
 
 	reader, err := p.minio.DownloadObject(ctx, BucketName, job.OriginalImagePath)
@@ -210,20 +226,19 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 	}
 
 	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
-		JobID:   job.ParentId,
-		Status:  "END_SLICING",
-		Message: fmt.Sprintf("Worker %s finished slicing for task %s", p.workerID, job.ParentId),
+		JobID:    job.ParentId,
+		WorkerID: p.workerID,
+		Status:   "PROCESSING",
+		Progress: 0.10,
+		Message:  fmt.Sprintf("Imagen dividida en %d fragmentos.", N),
 	})
 
 	return nil
 }
 
 func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
-	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
-		JobID:   job.ParentId,
-		Status:  "START_SUBTASK",
-		Message: fmt.Sprintf("Worker %s started subtask %s", p.workerID, job.Id),
-	})
+	// We don't publish progress for every subtask start to avoid flooding,
+	// but we could if needed. For now, we update on completion.
 
 	reader, err := p.minio.DownloadObject(ctx, BucketName, job.OriginalImagePath)
 	if err != nil {
@@ -312,16 +327,23 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 		return fmt.Errorf("upload processed subtask: %w", err)
 	}
 
-	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
-		JobID:   job.ParentId,
-		Status:  "END_SUBTASK",
-		Message: fmt.Sprintf("Worker %s finished subtask %s", p.workerID, job.Id),
-	})
-
 	count, err := p.redis.DecrementCounter(ctx, job.ParentId)
 	if err != nil {
 		return fmt.Errorf("decrement counter: %w", err)
 	}
+
+	totalStr := job.Parameters["total_subtasks"]
+	total, _ := strconv.Atoi(totalStr)
+	completed := total - int(count)
+	progress := 0.10 + (float64(completed)/float64(total))*0.80
+
+	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+		JobID:    job.ParentId,
+		WorkerID: p.workerID,
+		Status:   "PROCESSING",
+		Progress: progress,
+		Message:  fmt.Sprintf("Procesando fragmento %d de %d...", completed, total),
+	})
 
 	log.Printf("Task %s: subtasks remaining: %d", job.ParentId, count)
 
@@ -356,6 +378,14 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 
 func (p *Processor) handleReconstruct(ctx context.Context, job *jobs.Job) error {
 	log.Printf("Starting reconstruction for task %s", job.ParentId)
+
+	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+		JobID:    job.ParentId,
+		WorkerID: p.workerID,
+		Status:   "RECONSTRUCTING",
+		Progress: 0.95,
+		Message:  "Reconstruyendo la imagen final...",
+	})
 
 	totalSubtasks, _ := strconv.Atoi(job.Parameters["total_subtasks"])
 	originalHeight, _ := strconv.Atoi(job.Parameters["original_height"])
@@ -431,8 +461,10 @@ func (p *Processor) handleReconstruct(ctx context.Context, job *jobs.Job) error 
 
 	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
 		JobID:     job.ParentId,
+		WorkerID:  p.workerID,
 		Status:    "JOB_COMPLETED",
-		Message:   "Image processing completed successfully",
+		Progress:  1.0,
+		Message:   "¡Procesamiento completado!",
 		ResultURL: finalPath,
 	})
 

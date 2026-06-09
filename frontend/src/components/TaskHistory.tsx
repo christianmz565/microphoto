@@ -28,7 +28,6 @@ export function TaskHistory() {
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      // ignore download errors
     } finally {
       setDownloading(null);
     }
