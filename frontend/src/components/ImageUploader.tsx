@@ -1,5 +1,5 @@
 import { IconUpload } from '@tabler/icons-react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -46,6 +46,33 @@ export function ImageUploader({ onImageSelect }: ImageUploaderProps) {
     [handleFile],
   );
 
+  const handlePaste = useCallback(
+    async (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const blob = item.getAsFile();
+          if (blob) {
+            const pastedFile = new File([blob], 'pasted-image.png', {
+              type: blob.type,
+            });
+            handleFile(pastedFile);
+          }
+          return;
+        }
+      }
+    },
+    [handleFile],
+  );
+
+  useEffect(() => {
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [handlePaste]);
+
   if (preview) {
     return (
       <Card className="mx-auto w-full max-w-md">
@@ -84,10 +111,10 @@ export function ImageUploader({ onImageSelect }: ImageUploaderProps) {
         </div>
         <div className="text-center">
           <p className="font-medium">
-            Arrastra una imagen aquí o haz clic para buscar
+            Arrastra, pega o haz clic para buscar
           </p>
           <p className="text-sm text-muted-foreground">
-            PNG, JPG, GIF hasta 50MB
+            PNG, JPG, GIF hasta 50MB · Ctrl+V para pegar
           </p>
         </div>
         <input
