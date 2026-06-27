@@ -16,6 +16,7 @@ FROM alpine:3.19 AS base
 RUN apk add --no-cache ca-certificates vips
 
 FROM base AS coordinator
+RUN apk add --no-cache ffmpeg
 COPY --from=builder /bin/coordinator /usr/local/bin/coordinator
 USER 65534:65534
 ENTRYPOINT ["/usr/local/bin/coordinator"]

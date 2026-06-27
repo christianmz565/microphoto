@@ -3,6 +3,7 @@ package coordinator
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -12,6 +13,9 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 )
 
@@ -32,7 +36,7 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, _, err := r.FormFile("image")
+	file, header, err := r.FormFile("image")
 	if err != nil {
 		http.Error(w, "Image file is required", http.StatusBadRequest)
 		return
@@ -41,27 +45,36 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 
 	data, err := io.ReadAll(file)
 	if err != nil {
-		http.Error(w, "Failed to read image", http.StatusInternalServerError)
+		http.Error(w, "Failed to read file", http.StatusInternalServerError)
 		return
 	}
 
 	effectsJSON := r.FormValue("effects")
-	if effectsJSON == "" {
-		w.Header().Set("Content-Type", "image/png")
-		w.Write(data)
-		return
-	}
 
 	var effects []Effect
-	if err := json.Unmarshal([]byte(effectsJSON), &effects); err != nil {
-		http.Error(w, "Invalid effects JSON", http.StatusBadRequest)
-		return
+	if effectsJSON != "" {
+		if err := json.Unmarshal([]byte(effectsJSON), &effects); err != nil {
+			http.Error(w, "Invalid effects JSON", http.StatusBadRequest)
+			return
+		}
 	}
 
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		http.Error(w, "Failed to decode image", http.StatusBadRequest)
-		return
+	// Check if it's a video file
+	isVideo := isVideoFile(header.Filename, data)
+
+	var img image.Image
+	if isVideo {
+		img, err = extractFirstFrame(data)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to extract frame from video: %v", err), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		img, _, err = image.Decode(bytes.NewReader(data))
+		if err != nil {
+			http.Error(w, "Failed to decode image", http.StatusBadRequest)
+			return
+		}
 	}
 
 	for _, effect := range effects {
@@ -76,6 +89,59 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "image/png")
 	w.Write(buf.Bytes())
+}
+
+func isVideoFile(filename string, data []byte) bool {
+	ext := filepath.Ext(filename)
+	switch ext {
+	case ".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v":
+		return true
+	}
+	// Check magic bytes for common video formats
+	if len(data) > 12 {
+		// MP4/MOV: ftyp at offset 4
+		if string(data[4:8]) == "ftyp" {
+			return true
+		}
+		// WebM/MKV: EBML header
+		if data[0] == 0x1A && data[1] == 0x45 && data[2] == 0xDF && data[3] == 0xA3 {
+			return true
+		}
+	}
+	return false
+}
+
+func extractFirstFrame(videoData []byte) (image.Image, error) {
+	tmpDir, err := os.MkdirTemp("", "preview-*")
+	if err != nil {
+		return nil, fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	tmpVideo := filepath.Join(tmpDir, "input.mp4")
+	if err := os.WriteFile(tmpVideo, videoData, 0644); err != nil {
+		return nil, fmt.Errorf("write temp video: %w", err)
+	}
+
+	tmpFrame := filepath.Join(tmpDir, "frame.png")
+	cmd := exec.Command("ffmpeg", "-i", tmpVideo, "-vframes", "1", "-f", "image2", tmpFrame)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("ffmpeg extract: %w: %s", err, stderr.String())
+	}
+
+	frameData, err := os.ReadFile(tmpFrame)
+	if err != nil {
+		return nil, fmt.Errorf("read frame: %w", err)
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(frameData))
+	if err != nil {
+		return nil, fmt.Errorf("decode frame: %w", err)
+	}
+
+	return img, nil
 }
 
 func applyEffect(img image.Image, effectType string, params map[string]string) image.Image {
@@ -149,7 +215,6 @@ func applyBoxBlur(img image.Image, sigma float64) image.Image {
 	draw.Draw(src, bounds, img, bounds.Min, draw.Src)
 	dst := image.NewRGBA(bounds)
 
-	// Horizontal pass
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			var rSum, gSum, bSum, aSum float64
@@ -174,7 +239,6 @@ func applyBoxBlur(img image.Image, sigma float64) image.Image {
 		}
 	}
 
-	// Vertical pass
 	result := image.NewRGBA(bounds)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {

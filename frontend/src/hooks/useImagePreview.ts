@@ -45,12 +45,6 @@ export function useImagePreview(file: File) {
       abortRef.current?.abort();
       clearTimeout(debounceRef.current);
 
-      // Video files don't support real-time preview
-      if (isVideo) {
-        setPreviewUrl(null);
-        return;
-      }
-
       const effectsList = buildEffectsList(currentEffects);
 
       if (effectsList.length === 0) {
@@ -82,7 +76,7 @@ export function useImagePreview(file: File) {
         }
       }, 300);
     },
-    [file, isVideo],
+    [file],
   );
 
   useEffect(() => {

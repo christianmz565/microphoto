@@ -33,7 +33,7 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
   const handleDownload = useCallback(async () => {
     setIsDownloading(true);
     try {
-      // For videos, just download the original (no client-side processing)
+      // For videos, download the original (processing happens via /process-video)
       if (isVideo) {
         const a = document.createElement('a');
         a.href = originalUrl;
@@ -89,9 +89,9 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
       <div className="editor-body">
         <div className="editor-canvas-area">
           <div className="editor-canvas-wrapper">
-            {isVideo ? (
+            {isVideo && !previewUrl ? (
               <video
-                src={displayUrl}
+                src={originalUrl}
                 className="editor-canvas"
                 controls
                 muted
