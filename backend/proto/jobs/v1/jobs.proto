@@ -12,6 +12,8 @@ enum JobType {
     JOB_TYPE_RECONSTRUCT = 4;
     JOB_TYPE_SLICE = 5;
     JOB_TYPE_BRIGHTNESS = 6;
+    JOB_TYPE_VIDEO_EXTRACT = 7;
+    JOB_TYPE_VIDEO_REASSEMBLE = 8;
 }
 
 enum JobStatus {

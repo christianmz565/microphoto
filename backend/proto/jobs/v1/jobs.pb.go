@@ -24,13 +24,15 @@ const (
 type JobType int32
 
 const (
-	JobType_JOB_TYPE_UNSPECIFIED JobType = 0
-	JobType_JOB_TYPE_RESIZE      JobType = 1
-	JobType_JOB_TYPE_GRAYSCALE   JobType = 2
-	JobType_JOB_TYPE_BLUR        JobType = 3
-	JobType_JOB_TYPE_RECONSTRUCT JobType = 4
-	JobType_JOB_TYPE_SLICE       JobType = 5
-	JobType_JOB_TYPE_BRIGHTNESS  JobType = 6
+	JobType_JOB_TYPE_UNSPECIFIED      JobType = 0
+	JobType_JOB_TYPE_RESIZE           JobType = 1
+	JobType_JOB_TYPE_GRAYSCALE        JobType = 2
+	JobType_JOB_TYPE_BLUR             JobType = 3
+	JobType_JOB_TYPE_RECONSTRUCT      JobType = 4
+	JobType_JOB_TYPE_SLICE            JobType = 5
+	JobType_JOB_TYPE_BRIGHTNESS       JobType = 6
+	JobType_JOB_TYPE_VIDEO_EXTRACT    JobType = 7
+	JobType_JOB_TYPE_VIDEO_REASSEMBLE JobType = 8
 )
 
 // Enum value maps for JobType.
@@ -43,15 +45,19 @@ var (
 		4: "JOB_TYPE_RECONSTRUCT",
 		5: "JOB_TYPE_SLICE",
 		6: "JOB_TYPE_BRIGHTNESS",
+		7: "JOB_TYPE_VIDEO_EXTRACT",
+		8: "JOB_TYPE_VIDEO_REASSEMBLE",
 	}
 	JobType_value = map[string]int32{
-		"JOB_TYPE_UNSPECIFIED": 0,
-		"JOB_TYPE_RESIZE":      1,
-		"JOB_TYPE_GRAYSCALE":   2,
-		"JOB_TYPE_BLUR":        3,
-		"JOB_TYPE_RECONSTRUCT": 4,
-		"JOB_TYPE_SLICE":       5,
-		"JOB_TYPE_BRIGHTNESS":  6,
+		"JOB_TYPE_UNSPECIFIED":      0,
+		"JOB_TYPE_RESIZE":           1,
+		"JOB_TYPE_GRAYSCALE":        2,
+		"JOB_TYPE_BLUR":             3,
+		"JOB_TYPE_RECONSTRUCT":      4,
+		"JOB_TYPE_SLICE":            5,
+		"JOB_TYPE_BRIGHTNESS":       6,
+		"JOB_TYPE_VIDEO_EXTRACT":    7,
+		"JOB_TYPE_VIDEO_REASSEMBLE": 8,
 	}
 )
 

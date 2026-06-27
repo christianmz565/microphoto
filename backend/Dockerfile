@@ -26,6 +26,7 @@ USER 65534:65534
 ENTRYPOINT ["/usr/local/bin/reaper"]
 
 FROM base AS worker
+RUN apk add --no-cache ffmpeg
 COPY --from=builder /bin/worker /usr/local/bin/worker
 USER 65534:65534
 ENTRYPOINT ["/usr/local/bin/worker"]

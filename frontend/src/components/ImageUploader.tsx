@@ -1,28 +1,35 @@
-import { IconUpload } from '@tabler/icons-react';
+import { IconPhoto, IconUpload, IconVideo } from '@tabler/icons-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
 interface ImageUploaderProps {
-  onImageSelect: (file: File) => void;
+  onFileSelect: (file: File) => void;
 }
 
-export function ImageUploader({ onImageSelect }: ImageUploaderProps) {
+const ACCEPTED_TYPES = 'image/*,video/*';
+const MAX_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
+
+export function ImageUploader({ onFileSelect }: ImageUploaderProps) {
   const [preview, setPreview] = useState<string | null>(null);
   const [filename, setFilename] = useState<string | null>(null);
+  const [isVideo, setIsVideo] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(
     (file: File) => {
-      if (!file.type.startsWith('image/')) return;
-      if (file.size > 50 * 1024 * 1024) return;
+      const isImage = file.type.startsWith('image/');
+      const isVideoFile = file.type.startsWith('video/');
+      if (!isImage && !isVideoFile) return;
+      if (file.size > MAX_SIZE) return;
 
       setFilename(file.name);
+      setIsVideo(isVideoFile);
       setPreview(URL.createObjectURL(file));
-      onImageSelect(file);
+      onFileSelect(file);
     },
-    [onImageSelect],
+    [onFileSelect],
   );
 
   const handleDrop = useCallback(
@@ -77,21 +84,38 @@ export function ImageUploader({ onImageSelect }: ImageUploaderProps) {
     return (
       <Card className="mx-auto w-full max-w-md">
         <CardContent className="flex flex-col items-center gap-4">
-          <img
-            src={preview}
-            alt="Preview"
-            className="max-h-64 rounded-2xl object-contain"
-          />
-          <span className="text-sm text-muted-foreground">{filename}</span>
+          {isVideo ? (
+            <video
+              src={preview}
+              className="max-h-64 rounded-2xl object-contain"
+              controls
+              muted
+            />
+          ) : (
+            <img
+              src={preview}
+              alt="Preview"
+              className="max-h-64 rounded-2xl object-contain"
+            />
+          )}
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            {isVideo ? (
+              <IconVideo className="size-4" />
+            ) : (
+              <IconPhoto className="size-4" />
+            )}
+            {filename}
+          </div>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setPreview(null);
               setFilename(null);
+              setIsVideo(false);
             }}
           >
-            Elegir otra imagen
+            Elegir otro archivo
           </Button>
         </CardContent>
       </Card>
@@ -114,13 +138,13 @@ export function ImageUploader({ onImageSelect }: ImageUploaderProps) {
             Arrastra, pega o haz clic para buscar
           </p>
           <p className="text-sm text-muted-foreground">
-            PNG, JPG, GIF hasta 50MB · Ctrl+V para pegar
+            Imágenes y videos hasta 2GB · Ctrl+V para pegar
           </p>
         </div>
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept={ACCEPTED_TYPES}
           className="hidden"
           onChange={handleChange}
         />

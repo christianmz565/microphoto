@@ -37,12 +37,13 @@ func NewHTTPHandler(orch *Orchestrator, m *metrics.Metrics, maxUploadSize int64)
 func (h *HTTPHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", h.HealthCheck)
 	mux.HandleFunc("/api/v1/process", h.ProcessImage)
+	mux.HandleFunc("/api/v1/process-video", h.ProcessVideo)
 	mux.HandleFunc("/api/v1/preview", h.PreviewImage)
 	mux.HandleFunc("/api/v1/result/", h.DownloadResult)
 	mux.HandleFunc("/api/v1/events/", h.StreamEvents)
 }
 
-// DownloadResult serves the processed image for a given task ID.
+// DownloadResult serves the processed image or video for a given task ID.
 func (h *HTTPHandler) DownloadResult(w http.ResponseWriter, r *http.Request) {
 	taskID := r.URL.Path[len("/api/v1/result/"):]
 	if taskID == "" {
@@ -50,15 +51,21 @@ func (h *HTTPHandler) DownloadResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reader, err := h.orchestrator.DownloadResult(r.Context(), taskID)
+	// Try video first, then image
+	reader, err := h.orchestrator.DownloadVideoResult(r.Context(), taskID)
 	if err != nil {
-		log.Printf("Error downloading result for task %s: %v", taskID, err)
-		http.Error(w, "Result not found or not ready", http.StatusNotFound)
-		return
+		reader, err = h.orchestrator.DownloadResult(r.Context(), taskID)
+		if err != nil {
+			log.Printf("Error downloading result for task %s: %v", taskID, err)
+			http.Error(w, "Result not found or not ready", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+	} else {
+		w.Header().Set("Content-Type", "video/mp4")
 	}
 	defer reader.Close()
 
-	w.Header().Set("Content-Type", "image/png")
 	io.Copy(w, reader)
 }
 
@@ -202,6 +209,76 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 		err := h.orchestrator.ProcessImage(ctx, taskID, bytes.NewReader(data), header.Filename, jobType, int64(len(data)), params)
 		if err != nil {
 			log.Printf("Background processing failed for task %s: %v", taskID, err)
+		}
+	}()
+}
+
+// ProcessVideo handles the multipart form upload of a video for processing.
+func (h *HTTPHandler) ProcessVideo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	err := r.ParseMultipartForm(h.maxUploadSize)
+	if err != nil {
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("video")
+	if err != nil {
+		http.Error(w, "Video file is required", http.StatusBadRequest)
+		return
+	}
+
+	jobTypeStr := r.FormValue("type")
+	jobType := parseJobType(jobTypeStr)
+	if jobType == jobs.JobType_JOB_TYPE_UNSPECIFIED {
+		file.Close()
+		http.Error(w, "Invalid job type", http.StatusBadRequest)
+		return
+	}
+
+	params := make(map[string]string)
+	if r.FormValue("fps") != "" {
+		params["fps"] = r.FormValue("fps")
+	}
+	if r.FormValue("radius") != "" {
+		params["radius"] = r.FormValue("radius")
+	}
+	if r.FormValue("factor") != "" {
+		params["factor"] = r.FormValue("factor")
+	}
+	if r.FormValue("width") != "" {
+		params["width"] = r.FormValue("width")
+	}
+	if r.FormValue("height") != "" {
+		params["height"] = r.FormValue("height")
+	}
+
+	data, err := io.ReadAll(file)
+	file.Close()
+	if err != nil {
+		http.Error(w, "Failed to read video", http.StatusInternalServerError)
+		return
+	}
+
+	taskID := uuid.New().String()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{
+		"task_id": taskID,
+	})
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+
+		err := h.orchestrator.ProcessVideo(ctx, taskID, bytes.NewReader(data), header.Filename, jobType, int64(len(data)), params)
+		if err != nil {
+			log.Printf("Background video processing failed for task %s: %v", taskID, err)
 		}
 	}()
 }

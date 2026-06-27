@@ -76,3 +76,44 @@ func (o *Orchestrator) DownloadResult(ctx context.Context, taskID string) (io.Re
 	path := fmt.Sprintf("%s/final.png", taskID)
 	return o.minio.DownloadObject(ctx, BucketName, path)
 }
+
+// DownloadVideoResult downloads the final processed video from MinIO.
+func (o *Orchestrator) DownloadVideoResult(ctx context.Context, taskID string) (io.ReadCloser, error) {
+	path := fmt.Sprintf("%s/final.mp4", taskID)
+	return o.minio.DownloadObject(ctx, BucketName, path)
+}
+
+// ProcessVideo handles video upload and pushes a VIDEO_EXTRACT task to Redis.
+func (o *Orchestrator) ProcessVideo(ctx context.Context, taskID string, file io.Reader, filename string, jobType jobs.JobType, size int64, params map[string]string) error {
+	startTime := time.Now()
+
+	path := fmt.Sprintf("%s/video.mp4", taskID)
+	_, err := o.minio.UploadObject(ctx, BucketName, path, file, size, "video/mp4")
+	if err != nil {
+		return fmt.Errorf("upload to minio: %w", err)
+	}
+
+	extractJob := &jobs.Job{
+		Id:                uuid.New().String(),
+		Type:              jobs.JobType_JOB_TYPE_VIDEO_EXTRACT,
+		Status:            jobs.JobStatus_JOB_STATUS_UNSPECIFIED,
+		OriginalImagePath: path,
+		ParentId:          taskID,
+		CreatedAt:         time.Now().Unix(),
+		Timestamp:         time.Now().Unix(),
+		Parameters: map[string]string{
+			"target_type": jobType.String(),
+			"fps":         params["fps"],
+		},
+	}
+
+	err = o.redis.PushTask(ctx, extractJob)
+	if err != nil {
+		return fmt.Errorf("push video extract task: %w", err)
+	}
+
+	o.metrics.RecordTaskDuration(ctx, "coordinator", time.Since(startTime).Seconds())
+	o.metrics.RecordTaskProcessed(ctx, "coordinator", "VIDEO_EXTRACT")
+
+	return nil
+}

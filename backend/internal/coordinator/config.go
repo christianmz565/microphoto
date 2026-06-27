@@ -25,6 +25,6 @@ func NewConfig() *Config {
 		MinioAccessKey: env.String("MINIO_ACCESS_KEY", "minioadmin"),
 		MinioSecretKey: env.String("MINIO_SECRET_KEY", "minioadmin"),
 		MinioSSL:       env.Bool("MINIO_SSL", false),
-		MaxUploadSize:  env.Int64("MAX_UPLOAD_SIZE", 50<<20),
+		MaxUploadSize:  env.Int64("MAX_UPLOAD_SIZE", 2<<30),
 	}
 }

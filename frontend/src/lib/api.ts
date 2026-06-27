@@ -34,6 +34,34 @@ export async function uploadImage(
   return data.task_id;
 }
 
+export async function uploadVideo(
+  file: File,
+  type: FilterType,
+  params: Record<string, string>,
+): Promise<string> {
+  const formData = new FormData();
+  formData.append('video', file);
+  formData.append('type', type);
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== '') {
+      formData.append(key, value);
+    }
+  }
+
+  const res = await fetch(`${PUBLIC_API_URL}/api/v1/process-video`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Upload failed: ${res.status} ${res.statusText}`);
+  }
+
+  const data: ProcessResponse = await res.json();
+  return data.task_id;
+}
+
 export async function getResult(taskID: string): Promise<Blob> {
   const res = await fetch(`${PUBLIC_API_URL}/api/v1/result/${taskID}`);
 

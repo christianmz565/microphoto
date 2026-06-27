@@ -13,6 +13,8 @@ import (
 	"log"
 	"maps"
 	"math"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -72,6 +74,10 @@ func (p *Processor) HandleJob(ctx context.Context, job *jobs.Job) error {
 		err = p.handleSlice(ctx, job)
 	case jobs.JobType_JOB_TYPE_RECONSTRUCT:
 		err = p.handleReconstruct(ctx, job)
+	case jobs.JobType_JOB_TYPE_VIDEO_EXTRACT:
+		err = p.handleVideoExtract(ctx, job)
+	case jobs.JobType_JOB_TYPE_VIDEO_REASSEMBLE:
+		err = p.handleVideoReassemble(ctx, job)
 	default:
 		err = p.handleProcess(ctx, job)
 	}
@@ -469,5 +475,186 @@ func (p *Processor) handleReconstruct(ctx context.Context, job *jobs.Job) error 
 	})
 
 	log.Printf("Completed reconstruction for task %s", job.ParentId)
+	return nil
+}
+
+func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error {
+	log.Printf("Starting video frame extraction for task %s", job.ParentId)
+
+	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+		JobID:    job.ParentId,
+		WorkerID: p.workerID,
+		Status:   "EXTRACTING",
+		Progress: 0.05,
+		Message:  "Extrayendo frames del video...",
+	})
+
+	reader, err := p.minio.DownloadObject(ctx, BucketName, job.OriginalImagePath)
+	if err != nil {
+		return fmt.Errorf("download video: %w", err)
+	}
+	defer reader.Close()
+
+	buf, err := io.ReadAll(reader)
+	if err != nil {
+		return fmt.Errorf("read video: %w", err)
+	}
+
+	tmpVideo := fmt.Sprintf("/tmp/video_%s.mp4", job.ParentId)
+	if err := os.WriteFile(tmpVideo, buf, 0644); err != nil {
+		return fmt.Errorf("write temp video: %w", err)
+	}
+	defer os.Remove(tmpVideo)
+
+	tmpFrames := fmt.Sprintf("/tmp/frames_%s", job.ParentId)
+	defer os.RemoveAll(tmpFrames)
+
+	frames, width, height, err := ExtractFrames(tmpVideo, tmpFrames)
+	if err != nil {
+		return fmt.Errorf("extract frames: %w", err)
+	}
+
+	log.Printf("Task %s: extracted %d frames (%dx%d)", job.ParentId, len(frames), width, height)
+
+	// Upload each frame to MinIO and create processing jobs
+	targetType := jobs.JobType(jobs.JobType_value[job.Parameters["target_type"]])
+	const DefaultAttempts = 3
+
+	var subtasks []*jobs.Job
+	for _, frame := range frames {
+		frameData, err := os.ReadFile(frame.Path)
+		if err != nil {
+			return fmt.Errorf("read frame %d: %w", frame.Index, err)
+		}
+
+		framePath := fmt.Sprintf("%s/frame_%06d.png", job.ParentId, frame.Index)
+		_, err = p.minio.UploadObject(ctx, BucketName, framePath, bytes.NewReader(frameData), int64(len(frameData)), "image/png")
+		if err != nil {
+			return fmt.Errorf("upload frame %d: %w", frame.Index, err)
+		}
+
+		subJobParams := make(map[string]string)
+		maps.Copy(subJobParams, job.Parameters)
+		subJobParams["index"] = fmt.Sprintf("%d", frame.Index)
+		subJobParams["total_subtasks"] = fmt.Sprintf("%d", len(frames))
+		subJobParams["original_width"] = fmt.Sprintf("%d", width)
+		subJobParams["original_height"] = fmt.Sprintf("%d", height)
+		subJobParams["padding_top"] = "0"
+		subJobParams["padding_bottom"] = "0"
+
+		subJob := &jobs.Job{
+			Id:                uuid.New().String(),
+			Type:              targetType,
+			Status:            jobs.JobStatus_JOB_STATUS_UNSPECIFIED,
+			OriginalImagePath: framePath,
+			ParentId:          job.ParentId,
+			Region: &jobs.Region{
+				X:      0,
+				Y:      0,
+				Width:  int32(width),
+				Height: int32(height),
+			},
+			Attempts:   DefaultAttempts,
+			CreatedAt:  time.Now().Unix(),
+			Timestamp:  time.Now().Unix(),
+			Parameters: subJobParams,
+		}
+		subtasks = append(subtasks, subJob)
+	}
+
+	if err := p.redis.InitializeTask(ctx, job.ParentId, len(subtasks), DefaultAttempts); err != nil {
+		return fmt.Errorf("initialize redis task: %w", err)
+	}
+
+	if err := p.redis.PushTasksPipeline(ctx, subtasks); err != nil {
+		return fmt.Errorf("push frame jobs: %w", err)
+	}
+
+	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+		JobID:    job.ParentId,
+		WorkerID: p.workerID,
+		Status:   "PROCESSING",
+		Progress: 0.10,
+		Message:  fmt.Sprintf("Video dividido en %d frames para procesamiento paralelo.", len(subtasks)),
+	})
+
+	return nil
+}
+
+func (p *Processor) handleVideoReassemble(ctx context.Context, job *jobs.Job) error {
+	log.Printf("Starting video reassembly for task %s", job.ParentId)
+
+	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+		JobID:    job.ParentId,
+		WorkerID: p.workerID,
+		Status:   "REASSEMBLING",
+		Progress: 0.95,
+		Message:  "Reensamblando video...",
+	})
+
+	totalFrames, _ := strconv.Atoi(job.Parameters["total_subtasks"])
+	fpsStr := job.Parameters["fps"]
+	fps := 30.0
+	if f, err := strconv.ParseFloat(fpsStr, 64); err == nil && f > 0 {
+		fps = f
+	}
+
+	tmpFrames := fmt.Sprintf("/tmp/reassemble_%s", job.ParentId)
+	defer os.RemoveAll(tmpFrames)
+
+	if err := os.MkdirAll(tmpFrames, 0755); err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+
+	// Download all processed frames
+	for i := 0; i < totalFrames; i++ {
+		path := fmt.Sprintf("%s/res_frame_%06d.png", job.ParentId, i)
+		reader, err := p.minio.DownloadObject(ctx, BucketName, path)
+		if err != nil {
+			return fmt.Errorf("download frame %d: %w", i, err)
+		}
+
+		frameData, err := io.ReadAll(reader)
+		reader.Close()
+		if err != nil {
+			return fmt.Errorf("read frame %d: %w", i, err)
+		}
+
+		tmpPath := filepath.Join(tmpFrames, fmt.Sprintf("frame_%06d.png", i))
+		if err := os.WriteFile(tmpPath, frameData, 0644); err != nil {
+			return fmt.Errorf("write frame %d: %w", i, err)
+		}
+	}
+
+	// Reassemble video
+	tmpVideo := fmt.Sprintf("/tmp/output_%s.mp4", job.ParentId)
+	defer os.Remove(tmpVideo)
+
+	if err := ReassembleVideo(tmpFrames, tmpVideo, fps); err != nil {
+		return fmt.Errorf("reassemble video: %w", err)
+	}
+
+	// Upload final video
+	videoData, err := os.ReadFile(tmpVideo)
+	if err != nil {
+		return fmt.Errorf("read output video: %w", err)
+	}
+
+	finalPath := fmt.Sprintf("%s/final.mp4", job.ParentId)
+	_, err = p.minio.UploadObject(ctx, BucketName, finalPath, bytes.NewReader(videoData), int64(len(videoData)), "video/mp4")
+	if err != nil {
+		return fmt.Errorf("upload final video: %w", err)
+	}
+
+	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+		JobID:     job.ParentId,
+		WorkerID:  p.workerID,
+		Status:    "JOB_COMPLETED",
+		Progress:  1.0,
+		Message:   "¡Procesamiento de video completado!",
+		ResultURL: finalPath,
+	})
+
+	log.Printf("Completed video reassembly for task %s", job.ParentId)
 	return nil
 }

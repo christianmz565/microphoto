@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 export default function App() {
   const [imageFile, setImageFile] = useState<File | null>(null);
 
-  const handleImageSelect = useCallback((file: File) => {
+  const handleFileSelect = useCallback((file: File) => {
     setImageFile(file);
   }, []);
 
@@ -32,7 +32,7 @@ export default function App() {
           </TabsList>
 
           <TabsContent value="upload">
-            <ImageUploader onImageSelect={handleImageSelect} />
+            <ImageUploader onFileSelect={handleFileSelect} />
           </TabsContent>
 
           <TabsContent value="history">
