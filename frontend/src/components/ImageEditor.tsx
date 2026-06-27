@@ -1,21 +1,21 @@
 import {
+  IconDownload,
   IconPhoto,
-  IconServer,
   IconLoader,
 } from '@tabler/icons-react';
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { EffectControls } from '@/components/EffectControls';
 import { Button } from '@/components/ui/button';
 import { useImagePreview } from '@/hooks/useImagePreview';
+import { previewImage } from '@/lib/api';
 
 interface ImageEditorProps {
   file: File;
-  onSendToBackend: () => void;
   onBack: () => void;
 }
 
-export function ImageEditor({ file, onSendToBackend, onBack }: ImageEditorProps) {
+export function ImageEditor({ file, onBack }: ImageEditorProps) {
   const {
     effects,
     updateEffect,
@@ -24,8 +24,32 @@ export function ImageEditor({ file, onSendToBackend, onBack }: ImageEditorProps)
     isProcessing,
   } = useImagePreview(file);
 
+  const [isDownloading, setIsDownloading] = useState(false);
   const originalUrl = useMemo(() => URL.createObjectURL(file), [file]);
   const displayUrl = previewUrl || originalUrl;
+
+  const handleDownload = useCallback(async () => {
+    setIsDownloading(true);
+    try {
+      const effectsList: { type: string; params: Record<string, string> }[] = [];
+      if (effects.grayscale > 0) effectsList.push({ type: 'GRAYSCALE', params: {} });
+      if (effects.blur > 0) effectsList.push({ type: 'BLUR', params: { radius: String(effects.blur) } });
+      if (effects.brightness !== 1) effectsList.push({ type: 'BRIGHTNESS', params: { factor: String(effects.brightness) } });
+
+      const blob = effectsList.length > 0
+        ? await previewImage(file, effectsList)
+        : file;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `edited-${file.name}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [file, effects]);
 
   return (
     <div className="image-editor">
@@ -36,9 +60,17 @@ export function ImageEditor({ file, onSendToBackend, onBack }: ImageEditorProps)
         </Button>
 
         <div className="editor-topbar-actions">
-          <Button size="sm" onClick={onSendToBackend}>
-            <IconServer className="size-4" />
-            Procesar en servidor
+          <Button
+            size="sm"
+            onClick={handleDownload}
+            disabled={isDownloading || isProcessing}
+          >
+            {isDownloading ? (
+              <IconLoader className="size-4 animate-spin" />
+            ) : (
+              <IconDownload className="size-4" />
+            )}
+            {isDownloading ? 'Descargando...' : 'Descargar'}
           </Button>
         </div>
       </div>
