@@ -2,6 +2,7 @@ import {
   IconDownload,
   IconPhoto,
   IconLoader,
+  IconVideo,
 } from '@tabler/icons-react';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -22,6 +23,7 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
     resetEffects,
     previewUrl,
     isProcessing,
+    isVideo,
   } = useImagePreview(file);
 
   const [isDownloading, setIsDownloading] = useState(false);
@@ -31,6 +33,15 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
   const handleDownload = useCallback(async () => {
     setIsDownloading(true);
     try {
+      // For videos, just download the original (no client-side processing)
+      if (isVideo) {
+        const a = document.createElement('a');
+        a.href = originalUrl;
+        a.download = file.name;
+        a.click();
+        return;
+      }
+
       const effectsList: { type: string; params: Record<string, string> }[] = [];
       if (effects.grayscale > 0) effectsList.push({ type: 'GRAYSCALE', params: {} });
       if (effects.blur > 0) effectsList.push({ type: 'BLUR', params: { radius: String(effects.blur) } });
@@ -49,13 +60,13 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
     } finally {
       setIsDownloading(false);
     }
-  }, [file, effects]);
+  }, [file, effects, isVideo, originalUrl]);
 
   return (
     <div className="image-editor">
       <div className="editor-topbar">
         <Button variant="ghost" size="sm" onClick={onBack}>
-          <IconPhoto className="size-4" />
+          {isVideo ? <IconVideo className="size-4" /> : <IconPhoto className="size-4" />}
           Volver
         </Button>
 
@@ -78,16 +89,27 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
       <div className="editor-body">
         <div className="editor-canvas-area">
           <div className="editor-canvas-wrapper">
-            <img
-              src={displayUrl}
-              alt="Preview"
-              className="editor-canvas"
-            />
-            {isProcessing && (
-              <div className="editor-preview-overlay">
-                <IconLoader className="size-5 animate-spin" />
-                <span>Procesando...</span>
-              </div>
+            {isVideo ? (
+              <video
+                src={displayUrl}
+                className="editor-canvas"
+                controls
+                muted
+              />
+            ) : (
+              <>
+                <img
+                  src={displayUrl}
+                  alt="Preview"
+                  className="editor-canvas"
+                />
+                {isProcessing && (
+                  <div className="editor-preview-overlay">
+                    <IconLoader className="size-5 animate-spin" />
+                    <span>Procesando...</span>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

@@ -38,10 +38,18 @@ export function useImagePreview(file: File) {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const abortRef = useRef<AbortController | null>(null);
 
+  const isVideo = file.type.startsWith('video/');
+
   const requestPreview = useCallback(
     (currentEffects: ImageEffects) => {
       abortRef.current?.abort();
       clearTimeout(debounceRef.current);
+
+      // Video files don't support real-time preview
+      if (isVideo) {
+        setPreviewUrl(null);
+        return;
+      }
 
       const effectsList = buildEffectsList(currentEffects);
 
@@ -74,7 +82,7 @@ export function useImagePreview(file: File) {
         }
       }, 300);
     },
-    [file],
+    [file, isVideo],
   );
 
   useEffect(() => {
@@ -105,18 +113,12 @@ export function useImagePreview(file: File) {
     abortRef.current?.abort();
   }, []);
 
-  const hasChanges =
-    effects.grayscale !== 0 ||
-    effects.blur !== 0 ||
-    effects.brightness !== 1 ||
-    effects.contrast !== 1;
-
   return {
     effects,
     updateEffect,
     resetEffects,
     previewUrl,
     isProcessing,
-    hasChanges,
+    isVideo,
   };
 }
