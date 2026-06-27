@@ -1,14 +1,13 @@
 import {
-  IconDownload,
   IconPhoto,
   IconServer,
+  IconLoader,
 } from '@tabler/icons-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useMemo } from 'react';
 
-import { EditorCanvas } from '@/components/EditorCanvas';
 import { EffectControls } from '@/components/EffectControls';
 import { Button } from '@/components/ui/button';
-import { useImageProcessor } from '@/hooks/useImageProcessor';
+import { useImagePreview } from '@/hooks/useImagePreview';
 
 interface ImageEditorProps {
   file: File;
@@ -18,44 +17,15 @@ interface ImageEditorProps {
 
 export function ImageEditor({ file, onSendToBackend, onBack }: ImageEditorProps) {
   const {
-    loadImage,
-    outputCanvasRef,
     effects,
     updateEffect,
     resetEffects,
-    exportImageAsync,
-    imageLoaded,
-    dimensions,
-  } = useImageProcessor();
+    previewUrl,
+    isProcessing,
+  } = useImagePreview(file);
 
-  const [isExporting, setIsExporting] = useState(false);
-
-  useEffect(() => {
-    loadImage(file);
-  }, [file, loadImage]);
-
-  const handleDownload = useCallback(async () => {
-    setIsExporting(true);
-    try {
-      const blob = await exportImageAsync('png');
-      if (blob) {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `edited-${file.name}`;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
-    } finally {
-      setIsExporting(false);
-    }
-  }, [exportImageAsync, file.name]);
-
-  const hasChanges =
-    effects.grayscale !== 0 ||
-    effects.blur !== 0 ||
-    effects.brightness !== 1 ||
-    effects.contrast !== 1;
+  const originalUrl = useMemo(() => URL.createObjectURL(file), [file]);
+  const displayUrl = previewUrl || originalUrl;
 
   return (
     <div className="image-editor">
@@ -66,17 +36,6 @@ export function ImageEditor({ file, onSendToBackend, onBack }: ImageEditorProps)
         </Button>
 
         <div className="editor-topbar-actions">
-          {hasChanges && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDownload}
-              disabled={isExporting}
-            >
-              <IconDownload className="size-4" />
-              {isExporting ? 'Exportando...' : 'Descargar'}
-            </Button>
-          )}
           <Button size="sm" onClick={onSendToBackend}>
             <IconServer className="size-4" />
             Procesar en servidor
@@ -86,18 +45,19 @@ export function ImageEditor({ file, onSendToBackend, onBack }: ImageEditorProps)
 
       <div className="editor-body">
         <div className="editor-canvas-area">
-          {imageLoaded ? (
-            <EditorCanvas
-              canvasRef={outputCanvasRef}
-              width={dimensions.width}
-              height={dimensions.height}
+          <div className="editor-canvas-wrapper">
+            <img
+              src={displayUrl}
+              alt="Preview"
+              className="editor-canvas"
             />
-          ) : (
-            <div className="editor-loading">
-              <div className="editor-loading-spinner" />
-              <span>Cargando imagen...</span>
-            </div>
-          )}
+            {isProcessing && (
+              <div className="editor-preview-overlay">
+                <IconLoader className="size-5 animate-spin" />
+                <span>Procesando...</span>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="editor-sidebar">

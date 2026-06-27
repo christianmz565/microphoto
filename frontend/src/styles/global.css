@@ -269,6 +269,20 @@
   display: block;
 }
 
+.editor-preview-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: oklch(0 0 0 / 50%);
+  backdrop-filter: blur(2px);
+  color: oklch(0.987 0.002 197.1);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
 .editor-sidebar {
   width: 280px;
   flex-shrink: 0;

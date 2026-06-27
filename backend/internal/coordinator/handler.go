@@ -37,6 +37,7 @@ func NewHTTPHandler(orch *Orchestrator, m *metrics.Metrics, maxUploadSize int64)
 func (h *HTTPHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", h.HealthCheck)
 	mux.HandleFunc("/api/v1/process", h.ProcessImage)
+	mux.HandleFunc("/api/v1/preview", h.PreviewImage)
 	mux.HandleFunc("/api/v1/result/", h.DownloadResult)
 	mux.HandleFunc("/api/v1/events/", h.StreamEvents)
 }

@@ -1,12 +1,11 @@
 import {
   IconAdjustments,
   IconBrightness,
-  IconContrast,
   IconFilter,
   IconRefresh,
 } from '@tabler/icons-react';
 
-import type { ImageEffects } from '@/hooks/useImageProcessor';
+import type { ImageEffects } from '@/hooks/useImagePreview';
 
 interface EffectControlsProps {
   effects: ImageEffects;
@@ -50,16 +49,6 @@ const sliders: SliderConfig[] = [
     key: 'brightness',
     label: 'Brillo',
     icon: IconBrightness,
-    min: 0,
-    max: 3,
-    step: 0.05,
-    default: 1,
-    unit: 'x',
-  },
-  {
-    key: 'contrast',
-    label: 'Contraste',
-    icon: IconContrast,
     min: 0,
     max: 3,
     step: 0.05,
