@@ -18,21 +18,45 @@ import (
 	"github.com/google/uuid"
 )
 
+type cachedPreview struct {
+	data      []byte
+	createdAt time.Time
+}
+
 // HTTPHandler manages the HTTP API for the coordinator.
 type HTTPHandler struct {
 	orchestrator  *Orchestrator
 	metrics       *metrics.Metrics
 	maxUploadSize int64
 	wg            sync.WaitGroup
+	previewCache  sync.Map // maps previewID (string) to cachedPreview
 }
 
 // NewHTTPHandler creates a new HTTPHandler instance.
 func NewHTTPHandler(orch *Orchestrator, m *metrics.Metrics, maxUploadSize int64) *HTTPHandler {
-	return &HTTPHandler{
+	h := &HTTPHandler{
 		orchestrator:  orch,
 		metrics:       m,
 		maxUploadSize: maxUploadSize,
 	}
+
+	h.wg.Go(func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			now := time.Now()
+			h.previewCache.Range(func(key, value any) bool {
+				cp, ok := value.(cachedPreview)
+				if ok && now.Sub(cp.createdAt) > 30*time.Minute {
+					h.previewCache.Delete(key)
+				}
+				return true
+			})
+		}
+	})
+
+	return h
 }
 
 // RegisterRoutes registers the HTTP routes with the provided mux.
@@ -231,12 +255,18 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.wg.Go(func() {
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
 		err := h.orchestrator.ProcessImage(ctx, taskID, bytes.NewReader(data), header.Filename, jobType, int64(len(data)), params)
 		if err != nil {
 			log.Printf("Background processing failed for task %s: %v", taskID, err)
+			_ = h.orchestrator.redis.PublishProgress(context.Background(), taskID, model.ProgressPayload{
+				JobID:     taskID,
+				Status:    "JOB_FAILED",
+				Message:   err.Error(),
+				Timestamp: time.Now().UnixNano(),
+			})
 		}
 	})
 }
@@ -313,12 +343,18 @@ func (h *HTTPHandler) ProcessVideo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.wg.Go(func() {
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
 
 		err := h.orchestrator.ProcessVideo(ctx, taskID, bytes.NewReader(data), header.Filename, jobType, int64(len(data)), params)
 		if err != nil {
 			log.Printf("Background video processing failed for task %s: %v", taskID, err)
+			_ = h.orchestrator.redis.PublishProgress(context.Background(), taskID, model.ProgressPayload{
+				JobID:     taskID,
+				Status:    "JOB_FAILED",
+				Message:   err.Error(),
+				Timestamp: time.Now().UnixNano(),
+			})
 		}
 	})
 }

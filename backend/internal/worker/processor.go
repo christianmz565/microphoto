@@ -733,24 +733,37 @@ func (p *Processor) ProcessVideoSegment(ctx context.Context, job *jobs.Job, inpu
 		return nil, fmt.Errorf("extract segment frames: %w", err)
 	}
 
-	_ = width // not used directly, metadata inherited from parent
+	_ = width
 	_ = height
 
-	// Process each frame
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(8)
+
 	for _, frame := range frames {
-		frameData, err := os.ReadFile(frame.Path)
-		if err != nil {
-			return nil, fmt.Errorf("read frame %d: %w", frame.Index, err)
-		}
+		g.Go(func() error {
+			if gCtx.Err() != nil {
+				return gCtx.Err()
+			}
 
-		processed, err := p.applyEffectsPipeline(frameData, job)
-		if err != nil {
-			return nil, fmt.Errorf("process segment frame %d: %w", frame.Index, err)
-		}
+			frameData, err := os.ReadFile(frame.Path)
+			if err != nil {
+				return fmt.Errorf("read frame %d: %w", frame.Index, err)
+			}
 
-		if err := os.WriteFile(frame.Path, processed, 0o644); err != nil {
-			return nil, fmt.Errorf("write processed frame %d: %w", frame.Index, err)
-		}
+			processed, err := p.applyEffectsPipeline(frameData, job)
+			if err != nil {
+				return fmt.Errorf("process segment frame %d: %w", frame.Index, err)
+			}
+
+			if err := os.WriteFile(frame.Path, processed, 0o644); err != nil {
+				return fmt.Errorf("write processed frame %d: %w", frame.Index, err)
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	tmpOutputVideo := filepath.Join(tmpDir, "output.mp4")

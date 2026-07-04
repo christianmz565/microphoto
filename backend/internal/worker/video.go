@@ -17,8 +17,7 @@ type FrameInfo struct {
 	Index int
 }
 
-// ExtractFrames extracts all frames from a video file as PNG images.
-// Returns the list of frame paths, dimensions, fps, and any error.
+// ExtractFrames extracts all frames from a video file as JPEG images.
 func ExtractFrames(ctx context.Context, videoPath, outputDir string) ([]FrameInfo, int, int, float64, error) {
 	if err := ensureDir(outputDir); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("create output dir: %w", err)
@@ -29,8 +28,8 @@ func ExtractFrames(ctx context.Context, videoPath, outputDir string) ([]FrameInf
 		return nil, 0, 0, 0, fmt.Errorf("get metadata: %w", err)
 	}
 
-	pattern := filepath.Join(outputDir, "frame_%06d.png")
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-i", videoPath, "-vsync", "0", pattern)
+	pattern := filepath.Join(outputDir, "frame_%06d.jpg")
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-i", videoPath, "-q:v", "2", "-fps_mode", "passthrough", pattern)
 
 	var stderr bytes.Buffer
 
@@ -39,7 +38,7 @@ func ExtractFrames(ctx context.Context, videoPath, outputDir string) ([]FrameInf
 		return nil, 0, 0, 0, fmt.Errorf("ffmpeg extract: %w: %s", err, stderr.String())
 	}
 
-	matches, err := filepath.Glob(filepath.Join(outputDir, "frame_*.png"))
+	matches, err := filepath.Glob(filepath.Join(outputDir, "frame_*.jpg"))
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("glob frames: %w", err)
 	}
@@ -97,7 +96,7 @@ func getVideoMetadata(ctx context.Context, videoPath string) (int, int, float64,
 
 // ReassembleVideo combines processed frames back into a video.
 func ReassembleVideo(ctx context.Context, frameDir, outputVideoPath string, fps float64) error {
-	pattern := filepath.Join(frameDir, "frame_%06d.png")
+	pattern := filepath.Join(frameDir, "frame_%06d.jpg")
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", "-y",
 		"-framerate", fmt.Sprintf("%.3f", fps),

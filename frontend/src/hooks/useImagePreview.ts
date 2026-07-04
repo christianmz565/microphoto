@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { type PreviewEffect, previewImage } from '@/lib/api';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { type PreviewEffect, previewImage } from "@/lib/api";
 
 export interface ImageEffects {
   grayscale: number;
@@ -19,14 +19,14 @@ function buildEffectsList(effects: ImageEffects): PreviewEffect[] {
   const list: PreviewEffect[] = [];
 
   if (effects.grayscale > 0) {
-    list.push({ type: 'GRAYSCALE', params: {} });
+    list.push({ type: "GRAYSCALE", params: {} });
   }
   if (effects.blur > 0) {
-    list.push({ type: 'BLUR', params: { radius: String(effects.blur) } });
+    list.push({ type: "BLUR", params: { radius: String(effects.blur) } });
   }
   if (effects.brightness !== 1) {
     list.push({
-      type: 'BRIGHTNESS',
+      type: "BRIGHTNESS",
       params: { factor: String(effects.brightness) },
     });
   }
@@ -40,8 +40,15 @@ export function useImagePreview(file: File) {
   const [isProcessing, setIsProcessing] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const abortRef = useRef<AbortController | null>(null);
+  const previewIDRef = useRef<string | null>(null);
 
-  const isVideo = file.type.startsWith('video/');
+  const isVideo = file.type.startsWith("video/");
+
+  const lastFileRef = useRef(file);
+  if (lastFileRef.current !== file) {
+    lastFileRef.current = file;
+    previewIDRef.current = null;
+  }
 
   const requestPreview = useCallback(
     (currentEffects: ImageEffects) => {
@@ -61,8 +68,17 @@ export function useImagePreview(file: File) {
         setIsProcessing(true);
 
         try {
-          const blob = await previewImage(file, effectsList);
+          const blob = await previewImage(
+            file,
+            effectsList,
+            previewIDRef.current,
+          );
           if (!controller.signal.aborted) {
+            const returnedPreviewID = (blob as Blob & { previewID?: string })
+              .previewID;
+            if (returnedPreviewID) {
+              previewIDRef.current = returnedPreviewID;
+            }
             setPreviewUrl((prev) => {
               if (prev) URL.revokeObjectURL(prev);
               return URL.createObjectURL(blob);
@@ -70,7 +86,7 @@ export function useImagePreview(file: File) {
           }
         } catch (err) {
           if (!controller.signal.aborted) {
-            console.error('Preview failed:', err);
+            console.error("Preview failed:", err);
           }
         } finally {
           if (!controller.signal.aborted) {
@@ -102,6 +118,7 @@ export function useImagePreview(file: File) {
 
   const resetEffects = useCallback(() => {
     setEffects(defaultEffects);
+    previewIDRef.current = null;
     setPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return null;

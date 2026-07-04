@@ -13,6 +13,7 @@ import (
 	"image/png"
 	"io"
 	"log"
+	"maps"
 	"math"
 	"net/http"
 	"os"
@@ -39,25 +40,25 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := r.ParseMultipartForm(h.maxUploadSize)
+	err := r.ParseMultipartForm(32 << 20)
 	if err != nil {
-		http.Error(w, "Failed to parse form", http.StatusBadRequest)
-		return
+		if err == http.ErrNotMultipart {
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, "Failed to parse form", http.StatusBadRequest)
+				return
+			}
+		} else {
+			err = r.ParseMultipartForm(h.maxUploadSize)
+			if err != nil && err != http.ErrNotMultipart {
+				http.Error(w, "Failed to parse form", http.StatusBadRequest)
+				return
+			} else if err == http.ErrNotMultipart {
+				_ = r.ParseForm()
+			}
+		}
 	}
 
-	file, header, err := r.FormFile("image")
-	if err != nil {
-		http.Error(w, "Image file is required", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	data, err := io.ReadAll(file)
-	if err != nil {
-		http.Error(w, "Failed to read file", http.StatusInternalServerError)
-		return
-	}
-
+	previewID := r.FormValue("preview_id")
 	effectsJSON := r.FormValue("effects")
 
 	var effects []Effect
@@ -68,37 +69,93 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	isVideo := isVideoFile(header.Filename, data)
+	var cutData []byte
+	var isVideo bool
+	var filename string
+
+	if previewID != "" {
+		val, ok := h.previewCache.Load(previewID)
+		if !ok {
+			http.Error(w, "Preview session expired or not found", http.StatusNotFound)
+			return
+		}
+		cp := val.(cachedPreview)
+		cutData = cp.data
+		isVideo = true
+		filename = "preview.mp4"
+	} else {
+		// Normal upload
+		file, header, err := r.FormFile("image")
+		if err != nil {
+			http.Error(w, "Image file is required", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		filename = header.Filename
+		isVideo = isVideoFile(filename, nil)
+
+		if isVideo {
+			tmpInput, err := os.CreateTemp("", "preview-upload-*.mp4")
+			if err != nil {
+				http.Error(w, "Failed to create temp file", http.StatusInternalServerError)
+				return
+			}
+			tmpInputPath := tmpInput.Name()
+			defer os.Remove(tmpInputPath)
+			defer tmpInput.Close()
+
+			if _, err := io.Copy(tmpInput, file); err != nil {
+				http.Error(w, "Failed to save upload", http.StatusInternalServerError)
+				return
+			}
+			tmpInput.Close()
+
+			cutData, err = cutVideoPreviewFile(r.Context(), tmpInputPath, 2)
+			if err != nil {
+				log.Printf("Failed to cut preview video: %v, falling back to original", err)
+				_, _ = file.Seek(0, io.SeekStart)
+				data, readErr := io.ReadAll(file)
+				if readErr != nil {
+					http.Error(w, "Failed to read file", http.StatusInternalServerError)
+					return
+				}
+				cutData = data
+			}
+
+			previewID = fmt.Sprintf("preview-vid-%s", uuid.New().String())
+			h.previewCache.Store(previewID, cachedPreview{
+				data:      cutData,
+				createdAt: time.Now(),
+			})
+		} else {
+			data, err := io.ReadAll(file)
+			if err != nil {
+				http.Error(w, "Failed to read file", http.StatusInternalServerError)
+				return
+			}
+			cutData = data
+		}
+	}
 
 	if isVideo {
 		taskID := fmt.Sprintf("preview-vid-%s", uuid.New().String())
 
-		// Parse job type
-		var targetType jobs.JobType = jobs.JobType_JOB_TYPE_GRAYSCALE
+		targetType := jobs.JobType_JOB_TYPE_GRAYSCALE
 		if len(effects) > 0 {
 			targetType = parseJobType(effects[0].Type)
 		}
 
-		// Prepare parameters
 		params := make(map[string]string)
 		if len(effects) > 0 {
-			for k, v := range map[string]string(effects[0].Params) {
-				params[k] = v
-			}
+			maps.Copy(params, map[string]string(effects[0].Params))
 		}
 		if effectsJSON != "" {
 			params["effects"] = effectsJSON
 		}
 
-		// Cut the video to a max of 2 seconds for ultra-fast preview processing
-		cutData, err := cutVideoPreview(data, 2)
-		if err != nil {
-			log.Printf("Failed to cut preview video: %v, using original video", err)
-			cutData = data
-		}
-
 		// Start distributed video processing
-		err = h.orchestrator.ProcessVideo(r.Context(), taskID, bytes.NewReader(cutData), header.Filename, targetType, int64(len(cutData)), params)
+		err = h.orchestrator.ProcessVideo(r.Context(), taskID, bytes.NewReader(cutData), filename, targetType, int64(len(cutData)), params)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to start distributed video preview: %v", err), http.StatusInternalServerError)
 			return
@@ -126,9 +183,10 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 
 				var event model.ProgressPayload
 				if err := json.Unmarshal([]byte(msg.Payload), &event); err == nil {
-					if event.Status == "JOB_COMPLETED" {
+					switch event.Status {
+					case "JOB_COMPLETED":
 						completed = true
-					} else if event.Status == "JOB_FAILED" {
+					case "JOB_FAILED":
 						http.Error(w, fmt.Sprintf("Distributed preview failed: %s", event.Message), http.StatusInternalServerError)
 						return
 					}
@@ -136,7 +194,6 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Download result
 		reader, err := h.orchestrator.DownloadVideoResult(r.Context(), taskID)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to download video result: %v", err), http.StatusInternalServerError)
@@ -144,14 +201,16 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 		}
 		defer reader.Close()
 
-		// Set headers and write video data
 		w.Header().Set("Content-Type", "video/mp4")
+		if previewID != "" {
+			w.Header().Set("X-Preview-ID", previewID)
+			w.Header().Set("Access-Control-Expose-Headers", "X-Preview-ID")
+		}
 		io.Copy(w, reader)
 		return
 	}
 
-	// Image preview processing
-	img, _, err := image.Decode(bytes.NewReader(data))
+	img, _, err := image.Decode(bytes.NewReader(cutData))
 	if err != nil {
 		http.Error(w, "Failed to decode image", http.StatusBadRequest)
 		return
@@ -228,20 +287,15 @@ func extractFirstFrame(videoData []byte) (image.Image, error) {
 	return img, nil
 }
 
-func cutVideoPreview(videoData []byte, durationSec int) ([]byte, error) {
+func cutVideoPreviewFile(ctx context.Context, inputPath string, durationSec int) ([]byte, error) {
 	tmpDir, err := os.MkdirTemp("", "preview-cut-*")
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	tmpInput := filepath.Join(tmpDir, "input.mp4")
-	if err := os.WriteFile(tmpInput, videoData, 0644); err != nil {
-		return nil, fmt.Errorf("write temp input: %w", err)
-	}
-
 	tmpOutput := filepath.Join(tmpDir, "output.mp4")
-	cmd := exec.Command("ffmpeg", "-y", "-ss", "0", "-t", strconv.Itoa(durationSec), "-i", tmpInput, "-c", "copy", "-map", "0", "-avoid_negative_ts", "1", tmpOutput)
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-ss", "0", "-t", strconv.Itoa(durationSec), "-i", inputPath, "-c", "copy", "-map", "0", "-avoid_negative_ts", "1", tmpOutput)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

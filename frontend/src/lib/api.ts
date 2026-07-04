@@ -82,11 +82,16 @@ export interface PreviewEffect {
 }
 
 export async function previewImage(
-  file: File,
+  file: File | null,
   effects: PreviewEffect[],
+  previewID?: string | null,
 ): Promise<Blob> {
   const formData = new FormData();
-  formData.append('image', file);
+  if (previewID) {
+    formData.append('preview_id', previewID);
+  } else if (file) {
+    formData.append('image', file);
+  }
   formData.append('effects', JSON.stringify(effects));
 
   const res = await fetch(`${PUBLIC_API_URL}/api/v1/preview`, {
@@ -98,5 +103,16 @@ export async function previewImage(
     throw new Error(`Preview failed: ${res.status} ${res.statusText}`);
   }
 
-  return res.blob();
+  const blob = await res.blob();
+  const returnedPreviewID = res.headers.get('X-Preview-ID');
+  if (returnedPreviewID) {
+    Object.defineProperty(blob, 'previewID', {
+      value: returnedPreviewID,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+
+  return blob;
 }
