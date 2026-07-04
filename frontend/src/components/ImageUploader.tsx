@@ -134,9 +134,7 @@ export function ImageUploader({ onFileSelect }: ImageUploaderProps) {
           <IconUpload className="size-8 text-muted-foreground" />
         </div>
         <div className="text-center">
-          <p className="font-medium">
-            Arrastra, pega o haz clic para buscar
-          </p>
+          <p className="font-medium">Arrastra, pega o haz clic para buscar</p>
           <p className="text-sm text-muted-foreground">
             Imágenes y videos hasta 2GB · Ctrl+V para pegar
           </p>

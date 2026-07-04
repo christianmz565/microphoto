@@ -19,18 +19,18 @@ type FrameInfo struct {
 
 // ExtractFrames extracts all frames from a video file as PNG images.
 // Returns the list of frame paths, dimensions, fps, and any error.
-func ExtractFrames(videoPath, outputDir string) ([]FrameInfo, int, int, float64, error) {
+func ExtractFrames(ctx context.Context, videoPath, outputDir string) ([]FrameInfo, int, int, float64, error) {
 	if err := ensureDir(outputDir); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("create output dir: %w", err)
 	}
 
-	width, height, fps, err := getVideoMetadata(videoPath)
+	width, height, fps, err := getVideoMetadata(ctx, videoPath)
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("get metadata: %w", err)
 	}
 
 	pattern := filepath.Join(outputDir, "frame_%06d.png")
-	cmd := exec.CommandContext(context.Background(), "ffmpeg", "-i", videoPath, "-vsync", "0", pattern)
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-i", videoPath, "-vsync", "0", pattern)
 
 	var stderr bytes.Buffer
 
@@ -52,8 +52,8 @@ func ExtractFrames(videoPath, outputDir string) ([]FrameInfo, int, int, float64,
 	return frames, width, height, fps, nil
 }
 
-func getVideoMetadata(videoPath string) (int, int, float64, error) {
-	cmd := exec.CommandContext(context.Background(), "ffprobe", "-v", "error",
+func getVideoMetadata(ctx context.Context, videoPath string) (int, int, float64, error) {
+	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries", "stream=width,height,r_frame_rate",
 		"-of", "csv=p=0", videoPath)
@@ -96,10 +96,10 @@ func getVideoMetadata(videoPath string) (int, int, float64, error) {
 }
 
 // ReassembleVideo combines processed frames back into a video.
-func ReassembleVideo(frameDir, outputVideoPath string, fps float64) error {
+func ReassembleVideo(ctx context.Context, frameDir, outputVideoPath string, fps float64) error {
 	pattern := filepath.Join(frameDir, "frame_%06d.png")
 
-	cmd := exec.CommandContext(context.Background(), "ffmpeg", "-y",
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-y",
 		"-framerate", fmt.Sprintf("%.3f", fps),
 		"-i", pattern,
 		"-c:v", "libx264",
@@ -118,4 +118,26 @@ func ReassembleVideo(frameDir, outputVideoPath string, fps float64) error {
 
 func ensureDir(dir string) error {
 	return os.MkdirAll(dir, 0o755)
+}
+
+// SplitVideoIntoSegments splits a video file into smaller MP4 segments.
+func SplitVideoIntoSegments(ctx context.Context, videoPath, outputDir string, segmentTimeSec int) ([]string, error) {
+	if err := ensureDir(outputDir); err != nil {
+		return nil, fmt.Errorf("create output dir: %w", err)
+	}
+
+	pattern := filepath.Join(outputDir, "part_%03d.mp4")
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-i", videoPath, "-c", "copy", "-map", "0", "-segment_time", strconv.Itoa(segmentTimeSec), "-f", "segment", pattern)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("ffmpeg split: %w: %s", err, stderr.String())
+	}
+
+	matches, err := filepath.Glob(filepath.Join(outputDir, "part_*.mp4"))
+	if err != nil {
+		return nil, fmt.Errorf("glob segments: %w", err)
+	}
+
+	return matches, nil
 }

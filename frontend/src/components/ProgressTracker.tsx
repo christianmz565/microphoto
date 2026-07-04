@@ -7,31 +7,26 @@ import {
   IconScissors,
   IconStack2,
   IconTerminal2,
-} from "@tabler/icons-react";
-import { useState } from "react";
+} from '@tabler/icons-react';
+import { useState } from 'react';
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Progress } from "@/components/ui/progress";
-import { useSSE } from "@/hooks/useSSE";
-import { cn } from "@/lib/utils";
+} from '@/components/ui/dialog';
+import { Progress } from '@/components/ui/progress';
+import { useSSE } from '@/hooks/useSSE';
+import { cn } from '@/lib/utils';
 
 interface ProgressTrackerProps {
   taskID: string;
+  isVideo?: boolean;
 }
 
-const steps = [
-  { key: "SLICING", label: "Dividiendo imagen", icon: IconScissors },
-  { key: "PROCESSING", label: "Procesando fragmentos", icon: IconStack2 },
-  { key: "RECONSTRUCTING", label: "Reconstruyendo", icon: IconStack2 },
-] as const;
-
-export function ProgressTracker({ taskID }: ProgressTrackerProps) {
+export function ProgressTracker({ taskID, isVideo }: ProgressTrackerProps) {
   const { progress, status, message, isConnected, error, workers } =
     useSSE(taskID);
   const [showIndustrial, setShowIndustrial] = useState(false);
@@ -39,20 +34,36 @@ export function ProgressTracker({ taskID }: ProgressTrackerProps) {
 
   const currentWorker = selectedWorkerId ? workers[selectedWorkerId] : null;
 
+  const steps = isVideo
+    ? ([
+        { key: 'EXTRACTING', label: 'Extrayendo frames', icon: IconScissors },
+        { key: 'PROCESSING', label: 'Procesando frames', icon: IconStack2 },
+        { key: 'REASSEMBLING', label: 'Reensamblando video', icon: IconStack2 },
+      ] as const)
+    : ([
+        { key: 'SLICING', label: 'Dividiendo imagen', icon: IconScissors },
+        { key: 'PROCESSING', label: 'Procesando fragmentos', icon: IconStack2 },
+        { key: 'RECONSTRUCTING', label: 'Reconstruyendo', icon: IconStack2 },
+      ] as const);
+
   const getStepState = (stepKey: string) => {
-    const order = ["SLICING", "PROCESSING", "RECONSTRUCTING", "JOB_COMPLETED"];
-    const currentIdx = order.indexOf(status || "SLICING");
+    const order = isVideo
+      ? ['EXTRACTING', 'PROCESSING', 'REASSEMBLING', 'JOB_COMPLETED']
+      : ['SLICING', 'PROCESSING', 'RECONSTRUCTING', 'JOB_COMPLETED'];
+    const currentIdx = order.indexOf(
+      status || (isVideo ? 'EXTRACTING' : 'SLICING'),
+    );
     const stepIdx = order.indexOf(stepKey);
 
-    if (currentIdx === -1) return "pending";
-    if (status === "JOB_COMPLETED") return "done";
-    if (stepIdx < currentIdx) return "done";
-    if (stepIdx === currentIdx) return "active";
-    return "pending";
+    if (currentIdx === -1) return 'pending';
+    if (status === 'JOB_COMPLETED') return 'done';
+    if (stepIdx < currentIdx) return 'done';
+    if (stepIdx === currentIdx) return 'active';
+    return 'pending';
   };
 
   const activeWorkers = Object.values(workers).filter(
-    (w) => status === "JOB_COMPLETED" || Date.now() - w.lastUpdate < 10000,
+    (w) => status === 'JOB_COMPLETED' || Date.now() - w.lastUpdate < 10000,
   );
 
   return (
@@ -60,16 +71,16 @@ export function ProgressTracker({ taskID }: ProgressTrackerProps) {
       <Card className="mx-auto w-full max-w-md border-zinc-800 bg-black/40 backdrop-blur-xl">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase">
-            {status === "JOB_COMPLETED"
-              ? "PROCESAMIENTO FINALIZADO"
-              : "PROCESAMIENTO EN CURSO"}
+            {status === 'JOB_COMPLETED'
+              ? 'PROCESAMIENTO FINALIZADO'
+              : 'PROCESAMIENTO EN CURSO'}
           </CardTitle>
           <button
             type="button"
             onClick={() => setShowIndustrial(!showIndustrial)}
             className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold tracking-widest text-zinc-500 uppercase transition-colors hover:bg-zinc-800 hover:text-zinc-300"
           >
-            {showIndustrial ? "VISTA SIMPLE" : "DETALLES"}
+            {showIndustrial ? 'VISTA SIMPLE' : 'DETALLES'}
             {showIndustrial ? (
               <IconChevronUp size={12} />
             ) : (
@@ -81,7 +92,7 @@ export function ProgressTracker({ taskID }: ProgressTrackerProps) {
         <CardContent className="flex flex-col gap-6">
           <div className="space-y-2">
             <div className="flex justify-between text-[10px] font-mono text-zinc-500 tabular-nums">
-              <span>{status || "INICIALIZANDO"}</span>
+              <span>{status || 'INICIALIZANDO'}</span>
               <span>{Math.round(progress * 100)}%</span>
             </div>
             <Progress value={progress * 100} className="h-1 bg-zinc-900" />
@@ -94,14 +105,14 @@ export function ProgressTracker({ taskID }: ProgressTrackerProps) {
                 <div
                   key={step.key}
                   className={cn(
-                    "flex items-center gap-3 text-xs transition-opacity duration-300",
-                    state === "pending" && "opacity-40",
+                    'flex items-center gap-3 text-xs transition-opacity duration-300',
+                    state === 'pending' && 'opacity-40',
                   )}
                 >
                   <div className="relative flex h-4 w-4 items-center justify-center">
-                    {state === "done" ? (
+                    {state === 'done' ? (
                       <IconCheck className="size-3 text-primary" stroke={3} />
-                    ) : state === "active" && status !== "JOB_COMPLETED" ? (
+                    ) : state === 'active' && status !== 'JOB_COMPLETED' ? (
                       <IconLoader className="size-3 animate-spin text-primary" />
                     ) : (
                       <step.icon className="size-3 text-zinc-500" />
@@ -109,14 +120,14 @@ export function ProgressTracker({ taskID }: ProgressTrackerProps) {
                   </div>
                   <span
                     className={cn(
-                      "font-medium tracking-tight",
-                      state === "active" ? "text-zinc-100" : "text-zinc-400",
+                      'font-medium tracking-tight',
+                      state === 'active' ? 'text-zinc-100' : 'text-zinc-400',
                     )}
                   >
                     {step.label}
                   </span>
 
-                  {state === "active" && !showIndustrial && (
+                  {state === 'active' && !showIndustrial && (
                     <span className="ml-auto text-[10px] font-mono text-zinc-500 animate-in fade-in slide-in-from-right-1">
                       {message}
                     </span>
@@ -145,15 +156,15 @@ export function ProgressTracker({ taskID }: ProgressTrackerProps) {
                       <div className="mb-2 flex items-center justify-between border-b border-zinc-800/50 pb-1.5">
                         <div className="flex items-center gap-2">
                           <div className="relative h-1.5 w-1.5">
-                            {status !== "JOB_COMPLETED" && (
+                            {status !== 'JOB_COMPLETED' && (
                               <div className="absolute inset-0 animate-ping rounded-full bg-primary/40" />
                             )}
                             <div
                               className={cn(
-                                "absolute inset-0 rounded-full",
-                                status === "JOB_COMPLETED"
-                                  ? "bg-zinc-700"
-                                  : "bg-primary",
+                                'absolute inset-0 rounded-full',
+                                status === 'JOB_COMPLETED'
+                                  ? 'bg-zinc-700'
+                                  : 'bg-primary',
                               )}
                             />
                           </div>
@@ -196,7 +207,7 @@ export function ProgressTracker({ taskID }: ProgressTrackerProps) {
               <div className="rounded border border-zinc-800 bg-black/50 p-2 font-mono text-[9px] leading-relaxed text-zinc-500">
                 <div className="flex gap-2">
                   <span className="text-primary/70 font-bold">SYSTEM:</span>
-                  <span className="truncate">{message || "EN ESPERA..."}</span>
+                  <span className="truncate">{message || 'EN ESPERA...'}</span>
                 </div>
               </div>
             </div>
@@ -208,7 +219,7 @@ export function ProgressTracker({ taskID }: ProgressTrackerProps) {
             </div>
           )}
 
-          {!isConnected && !error && status !== "JOB_COMPLETED" && (
+          {!isConnected && !error && status !== 'JOB_COMPLETED' && (
             <div className="flex items-center justify-center gap-2 py-1 text-[9px] font-bold tracking-widest text-zinc-600 uppercase">
               <IconLoader size={10} className="animate-spin" />
               CONEXIÓN PERDIDA - REINTENTANDO
@@ -235,7 +246,7 @@ export function ProgressTracker({ taskID }: ProgressTrackerProps) {
                 className="group flex gap-3 border-b border-zinc-900/50 py-1 last:border-0 animate-in fade-in slide-in-from-left-1"
               >
                 <span className="shrink-0 select-none text-zinc-700">
-                  {String(i + 1).padStart(3, "0")}
+                  {String(i + 1).padStart(3, '0')}
                 </span>
                 <span className="text-zinc-400 transition-colors group-hover:text-zinc-200">
                   {log.message}

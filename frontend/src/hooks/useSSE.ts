@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { connectToEvents } from "@/lib/api";
+import { connectToEvents } from '@/lib/api';
 
 export interface WorkerLog {
   id: string;
@@ -26,8 +26,8 @@ export interface SSEState {
 
 const initialState: SSEState = {
   progress: 0,
-  status: "",
-  message: "",
+  status: '',
+  message: '',
   isConnected: false,
   error: null,
   workers: {},
@@ -51,8 +51,8 @@ export function useSSE(taskID: string | null) {
     if (!taskID) return;
 
     if (
-      statusRef.current === "JOB_COMPLETED" ||
-      statusRef.current === "JOB_FAILED"
+      statusRef.current === 'JOB_COMPLETED' ||
+      statusRef.current === 'JOB_FAILED'
     ) {
       return;
     }
@@ -91,8 +91,8 @@ export function useSSE(taskID: string | null) {
           if (data.worker_id) {
             const currentWorker = prev.workers[data.worker_id] || {
               id: data.worker_id,
-              status: "unknown",
-              message: "",
+              status: 'unknown',
+              message: '',
               lastUpdate: Date.now(),
               logs: [],
             };

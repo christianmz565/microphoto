@@ -9,6 +9,7 @@ export interface TaskEntry {
   filterType: string;
   timestamp: number;
   status: 'processing' | 'completed' | 'failed';
+  isVideo?: boolean;
 }
 
 function loadHistory(): TaskEntry[] {

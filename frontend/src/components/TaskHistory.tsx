@@ -1,8 +1,8 @@
 import {
-  IconClock,
   IconDownload,
   IconPhoto,
   IconTrash,
+  IconVideo,
 } from '@tabler/icons-react';
 import { useState } from 'react';
 
@@ -17,14 +17,14 @@ export function TaskHistory() {
   const { tasks, removeTask, clearHistory } = useTaskHistory();
   const [downloading, setDownloading] = useState<string | null>(null);
 
-  const handleDownload = async (taskID: string) => {
+  const handleDownload = async (taskID: string, isVideo?: boolean) => {
     setDownloading(taskID);
     try {
       const blob = await getResult(taskID);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `processed-${taskID.slice(0, 8)}.png`;
+      a.download = `processed-${taskID.slice(0, 8)}.${isVideo ? 'mp4' : 'png'}`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -60,7 +60,11 @@ export function TaskHistory() {
       {tasks.map((task, i) => (
         <Card key={task.taskID} size="sm">
           <CardContent className="flex items-center gap-3">
-            <IconClock className="size-4 shrink-0 text-muted-foreground" />
+            {task.isVideo ? (
+              <IconVideo className="size-4 shrink-0 text-muted-foreground" />
+            ) : (
+              <IconPhoto className="size-4 shrink-0 text-muted-foreground" />
+            )}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{task.filename}</p>
               <p className="text-xs text-muted-foreground">
@@ -82,7 +86,7 @@ export function TaskHistory() {
               <Button
                 variant="ghost"
                 size="icon-xs"
-                onClick={() => handleDownload(task.taskID)}
+                onClick={() => handleDownload(task.taskID, task.isVideo)}
                 disabled={downloading === task.taskID}
               >
                 <IconDownload className="size-3" />

@@ -92,6 +92,12 @@ func (o *Orchestrator) ProcessVideo(ctx context.Context, taskID string, file io.
 		return fmt.Errorf("upload to minio: %w", err)
 	}
 
+	jobParams := map[string]string{
+		"target_type": jobType.String(),
+		"is_video":    "true",
+	}
+	maps.Copy(jobParams, params)
+
 	extractJob := &jobs.Job{
 		Id:                uuid.New().String(),
 		Type:              jobs.JobType_JOB_TYPE_VIDEO_EXTRACT,
@@ -100,10 +106,7 @@ func (o *Orchestrator) ProcessVideo(ctx context.Context, taskID string, file io.
 		ParentId:          taskID,
 		CreatedAt:         time.Now().Unix(),
 		Timestamp:         time.Now().Unix(),
-		Parameters: map[string]string{
-			"target_type": jobType.String(),
-			"fps":         params["fps"],
-		},
+		Parameters:        jobParams,
 	}
 
 	err = o.redis.PushTask(ctx, extractJob)
