@@ -1,3 +1,4 @@
+// Package main is the entry point for the coordinator service.
 package main
 
 import (
@@ -5,11 +6,16 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/christianmz565/microphoto/internal/coordinator"
 	"github.com/christianmz565/microphoto/pkg/client/metrics"
 	"github.com/christianmz565/microphoto/pkg/client/minio"
 	"github.com/christianmz565/microphoto/pkg/client/redis"
+	"github.com/christianmz565/microphoto/pkg/model"
 )
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -49,6 +55,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize metrics: %v", err)
 	}
+
 	metrics.StartMetricsServer(cfg.MetricsPort)
 
 	rClient, err := redis.NewClient(cfg.RedisAddr)
@@ -61,12 +68,12 @@ func main() {
 		log.Fatalf("Failed to initialize minio: %v", err)
 	}
 
-	err = mClient.EnsureBucket(context.Background(), coordinator.BucketName)
+	err = mClient.EnsureBucket(context.Background(), model.BucketName)
 	if err != nil {
 		log.Fatalf("Failed to ensure bucket: %v", err)
 	}
 
-	err = mClient.SetupLifecyclePolicy(context.Background(), coordinator.BucketName)
+	err = mClient.SetupLifecyclePolicy(context.Background(), model.BucketName)
 	if err != nil {
 		log.Printf("Warning: Failed to setup lifecycle policy: %v", err)
 	}
@@ -77,6 +84,38 @@ func main() {
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 
-	log.Printf("Coordinator listening on :%s", cfg.Port)
-	log.Fatal(http.ListenAndServe(":"+cfg.Port, corsMiddleware(mux)))
+	srv := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           corsMiddleware(mux),
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		log.Printf("Coordinator listening on :%s", cfg.Port)
+
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("Coordinator shutting down...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Waiting for background tasks to complete...")
+	handler.Wait()
+
+	log.Println("Coordinator stopped")
 }

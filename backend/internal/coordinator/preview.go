@@ -13,6 +13,7 @@ import (
 	"image/png"
 	"io"
 	"log"
+	"maps"
 	"math"
 	"net/http"
 	"os"
@@ -26,36 +27,38 @@ import (
 	"github.com/google/uuid"
 )
 
+// Effect represents an image processing effect with its parameters.
 type Effect struct {
 	Type   string            `json:"type"`
 	Params map[string]string `json:"params"`
 }
 
+// PreviewImage handles the multipart form upload of an image for preview with effects applied.
 func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	err := r.ParseMultipartForm(h.maxUploadSize)
+	err := r.ParseMultipartForm(32 << 20)
 	if err != nil {
-		http.Error(w, "Failed to parse form", http.StatusBadRequest)
-		return
+		if err == http.ErrNotMultipart {
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, "Failed to parse form", http.StatusBadRequest)
+				return
+			}
+		} else {
+			err = r.ParseMultipartForm(h.maxUploadSize)
+			if err != nil && err != http.ErrNotMultipart {
+				http.Error(w, "Failed to parse form", http.StatusBadRequest)
+				return
+			} else if err == http.ErrNotMultipart {
+				_ = r.ParseForm()
+			}
+		}
 	}
 
-	file, header, err := r.FormFile("image")
-	if err != nil {
-		http.Error(w, "Image file is required", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	data, err := io.ReadAll(file)
-	if err != nil {
-		http.Error(w, "Failed to read file", http.StatusInternalServerError)
-		return
-	}
-
+	previewID := r.FormValue("preview_id")
 	effectsJSON := r.FormValue("effects")
 
 	var effects []Effect
@@ -66,38 +69,93 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Check if it's a video file
-	isVideo := isVideoFile(header.Filename, data)
+	var cutData []byte
+	var isVideo bool
+	var filename string
+
+	if previewID != "" {
+		val, ok := h.previewCache.Load(previewID)
+		if !ok {
+			http.Error(w, "Preview session expired or not found", http.StatusNotFound)
+			return
+		}
+		cp := val.(cachedPreview)
+		cutData = cp.data
+		isVideo = true
+		filename = "preview.mp4"
+	} else {
+		// Normal upload
+		file, header, err := r.FormFile("image")
+		if err != nil {
+			http.Error(w, "Image file is required", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		filename = header.Filename
+		isVideo = isVideoFile(filename, nil)
+
+		if isVideo {
+			tmpInput, err := os.CreateTemp("", "preview-upload-*.mp4")
+			if err != nil {
+				http.Error(w, "Failed to create temp file", http.StatusInternalServerError)
+				return
+			}
+			tmpInputPath := tmpInput.Name()
+			defer os.Remove(tmpInputPath)
+			defer tmpInput.Close()
+
+			if _, err := io.Copy(tmpInput, file); err != nil {
+				http.Error(w, "Failed to save upload", http.StatusInternalServerError)
+				return
+			}
+			tmpInput.Close()
+
+			cutData, err = cutVideoPreviewFile(r.Context(), tmpInputPath, 2)
+			if err != nil {
+				log.Printf("Failed to cut preview video: %v, falling back to original", err)
+				_, _ = file.Seek(0, io.SeekStart)
+				data, readErr := io.ReadAll(file)
+				if readErr != nil {
+					http.Error(w, "Failed to read file", http.StatusInternalServerError)
+					return
+				}
+				cutData = data
+			}
+
+			previewID = fmt.Sprintf("preview-vid-%s", uuid.New().String())
+			h.previewCache.Store(previewID, cachedPreview{
+				data:      cutData,
+				createdAt: time.Now(),
+			})
+		} else {
+			data, err := io.ReadAll(file)
+			if err != nil {
+				http.Error(w, "Failed to read file", http.StatusInternalServerError)
+				return
+			}
+			cutData = data
+		}
+	}
 
 	if isVideo {
 		taskID := fmt.Sprintf("preview-vid-%s", uuid.New().String())
 
-		// Parse job type
-		var targetType jobs.JobType = jobs.JobType_JOB_TYPE_GRAYSCALE
+		targetType := jobs.JobType_JOB_TYPE_GRAYSCALE
 		if len(effects) > 0 {
 			targetType = parseJobType(effects[0].Type)
 		}
 
-		// Prepare parameters
 		params := make(map[string]string)
 		if len(effects) > 0 {
-			for k, v := range map[string]string(effects[0].Params) {
-				params[k] = v
-			}
+			maps.Copy(params, map[string]string(effects[0].Params))
 		}
 		if effectsJSON != "" {
 			params["effects"] = effectsJSON
 		}
 
-		// Cut the video to a max of 2 seconds for ultra-fast preview processing
-		cutData, err := cutVideoPreview(data, 2)
-		if err != nil {
-			log.Printf("Failed to cut preview video: %v, using original video", err)
-			cutData = data
-		}
-
 		// Start distributed video processing
-		err = h.orchestrator.ProcessVideo(r.Context(), taskID, bytes.NewReader(cutData), header.Filename, targetType, int64(len(cutData)), params)
+		err = h.orchestrator.ProcessVideo(r.Context(), taskID, bytes.NewReader(cutData), filename, targetType, int64(len(cutData)), params)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to start distributed video preview: %v", err), http.StatusInternalServerError)
 			return
@@ -125,9 +183,10 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 
 				var event model.ProgressPayload
 				if err := json.Unmarshal([]byte(msg.Payload), &event); err == nil {
-					if event.Status == "JOB_COMPLETED" {
+					switch event.Status {
+					case "JOB_COMPLETED":
 						completed = true
-					} else if event.Status == "JOB_FAILED" {
+					case "JOB_FAILED":
 						http.Error(w, fmt.Sprintf("Distributed preview failed: %s", event.Message), http.StatusInternalServerError)
 						return
 					}
@@ -135,7 +194,6 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Download result
 		reader, err := h.orchestrator.DownloadVideoResult(r.Context(), taskID)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to download video result: %v", err), http.StatusInternalServerError)
@@ -143,14 +201,16 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 		}
 		defer reader.Close()
 
-		// Set headers and write video data
 		w.Header().Set("Content-Type", "video/mp4")
+		if previewID != "" {
+			w.Header().Set("X-Preview-ID", previewID)
+			w.Header().Set("Access-Control-Expose-Headers", "X-Preview-ID")
+		}
 		io.Copy(w, reader)
 		return
 	}
 
-	// Image preview processing
-	img, _, err := image.Decode(bytes.NewReader(data))
+	img, _, err := image.Decode(bytes.NewReader(cutData))
 	if err != nil {
 		http.Error(w, "Failed to decode image", http.StatusBadRequest)
 		return
@@ -167,7 +227,11 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "image/png")
-	w.Write(buf.Bytes())
+
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		return
+	}
 }
 
 func isVideoFile(filename string, data []byte) bool {
@@ -176,17 +240,15 @@ func isVideoFile(filename string, data []byte) bool {
 	case ".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v":
 		return true
 	}
-	// Check magic bytes for common video formats
 	if len(data) > 12 {
-		// MP4/MOV: ftyp at offset 4
 		if string(data[4:8]) == "ftyp" {
 			return true
 		}
-		// WebM/MKV: EBML header
 		if data[0] == 0x1A && data[1] == 0x45 && data[2] == 0xDF && data[3] == 0xA3 {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -195,16 +257,18 @@ func extractFirstFrame(videoData []byte) (image.Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	tmpVideo := filepath.Join(tmpDir, "input.mp4")
-	if err := os.WriteFile(tmpVideo, videoData, 0644); err != nil {
+	if err := os.WriteFile(tmpVideo, videoData, 0o644); err != nil {
 		return nil, fmt.Errorf("write temp video: %w", err)
 	}
 
 	tmpFrame := filepath.Join(tmpDir, "frame.png")
-	cmd := exec.Command("ffmpeg", "-i", tmpVideo, "-vframes", "1", "-f", "image2", tmpFrame)
+	cmd := exec.CommandContext(context.Background(), "ffmpeg", "-i", tmpVideo, "-vframes", "1", "-f", "image2", tmpFrame)
+
 	var stderr bytes.Buffer
+
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("ffmpeg extract: %w: %s", err, stderr.String())
@@ -223,20 +287,15 @@ func extractFirstFrame(videoData []byte) (image.Image, error) {
 	return img, nil
 }
 
-func cutVideoPreview(videoData []byte, durationSec int) ([]byte, error) {
+func cutVideoPreviewFile(ctx context.Context, inputPath string, durationSec int) ([]byte, error) {
 	tmpDir, err := os.MkdirTemp("", "preview-cut-*")
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	tmpInput := filepath.Join(tmpDir, "input.mp4")
-	if err := os.WriteFile(tmpInput, videoData, 0644); err != nil {
-		return nil, fmt.Errorf("write temp input: %w", err)
-	}
-
 	tmpOutput := filepath.Join(tmpDir, "output.mp4")
-	cmd := exec.Command("ffmpeg", "-y", "-ss", "0", "-t", strconv.Itoa(durationSec), "-i", tmpInput, "-c", "copy", "-map", "0", "-avoid_negative_ts", "1", tmpOutput)
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-ss", "0", "-t", strconv.Itoa(durationSec), "-i", inputPath, "-c", "copy", "-map", "0", "-avoid_negative_ts", "1", tmpOutput)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -260,19 +319,23 @@ func applyEffect(img image.Image, effectType string, params map[string]string) i
 		if v, err := strconv.ParseFloat(params["radius"], 64); err == nil {
 			radius = v
 		}
+
 		return applyBoxBlur(img, radius)
 	case "BRIGHTNESS":
 		factor := 1.0
 		if v, err := strconv.ParseFloat(params["factor"], 64); err == nil {
 			factor = v
 		}
+
 		return applyBrightness(img, factor)
 	case "RESIZE":
 		w, _ := strconv.Atoi(params["width"])
+
 		h, _ := strconv.Atoi(params["height"])
 		if w > 0 && h > 0 {
 			return applyResize(img, w, h)
 		}
+
 		return img
 	default:
 		return img
@@ -281,6 +344,7 @@ func applyEffect(img image.Image, effectType string, params map[string]string) i
 
 func applyGrayscale(img image.Image) image.Image {
 	bounds := img.Bounds()
+
 	result := image.NewRGBA(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -289,11 +353,13 @@ func applyGrayscale(img image.Image) image.Image {
 			result.SetRGBA(x, y, color.RGBA{R: uint8(lum >> 8), G: uint8(lum >> 8), B: uint8(lum >> 8), A: uint8(a >> 8)})
 		}
 	}
+
 	return result
 }
 
 func applyBrightness(img image.Image, factor float64) image.Image {
 	bounds := img.Bounds()
+
 	result := image.NewRGBA(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -306,6 +372,7 @@ func applyBrightness(img image.Image, factor float64) image.Image {
 			})
 		}
 	}
+
 	return result
 }
 
@@ -313,23 +380,40 @@ func applyBoxBlur(img image.Image, sigma float64) image.Image {
 	bounds := img.Bounds()
 	w := bounds.Dx()
 	h := bounds.Dy()
-	radius := int(math.Ceil(sigma * 1.5))
-	if radius < 1 {
-		radius = 1
-	}
+
+	radius := max(int(math.Ceil(sigma*1.5)), 1)
 
 	src := image.NewRGBA(bounds)
 	draw.Draw(src, bounds, img, bounds.Min, draw.Src)
 	dst := image.NewRGBA(bounds)
 
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			var rSum, gSum, bSum, aSum float64
-			var count float64
-			for dx := -radius; dx <= radius; dx++ {
-				xx := x + dx
-				if xx >= 0 && xx < w {
-					c := src.RGBAAt(xx, y)
+	blurPass(dst, src, w, h, radius, true)
+
+	result := image.NewRGBA(bounds)
+
+	blurPass(result, dst, w, h, radius, false)
+
+	return result
+}
+
+func blurPass(dst, src *image.RGBA, w, h, radius int, horizontal bool) {
+	for y := range h {
+		for x := range w {
+			var (
+				rSum, gSum, bSum, aSum float64
+				count                  float64
+			)
+
+			for d := -radius; d <= radius; d++ {
+				var px, py int
+				if horizontal {
+					px, py = x+d, y
+				} else {
+					px, py = x, y+d
+				}
+
+				if px >= 0 && px < w && py >= 0 && py < h {
+					c := src.RGBAAt(px, py)
 					rSum += float64(c.R)
 					gSum += float64(c.G)
 					bSum += float64(c.B)
@@ -337,6 +421,7 @@ func applyBoxBlur(img image.Image, sigma float64) image.Image {
 					count++
 				}
 			}
+
 			dst.SetRGBA(x, y, color.RGBA{
 				R: uint8(rSum / count),
 				G: uint8(gSum / count),
@@ -345,33 +430,6 @@ func applyBoxBlur(img image.Image, sigma float64) image.Image {
 			})
 		}
 	}
-
-	result := image.NewRGBA(bounds)
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			var rSum, gSum, bSum, aSum float64
-			var count float64
-			for dy := -radius; dy <= radius; dy++ {
-				yy := y + dy
-				if yy >= 0 && yy < h {
-					c := dst.RGBAAt(x, yy)
-					rSum += float64(c.R)
-					gSum += float64(c.G)
-					bSum += float64(c.B)
-					aSum += float64(c.A)
-					count++
-				}
-			}
-			result.SetRGBA(x, y, color.RGBA{
-				R: uint8(rSum / count),
-				G: uint8(gSum / count),
-				B: uint8(bSum / count),
-				A: uint8(aSum / count),
-			})
-		}
-	}
-
-	return result
 }
 
 func applyResize(img image.Image, targetW, targetH int) image.Image {
@@ -380,13 +438,25 @@ func applyResize(img image.Image, targetW, targetH int) image.Image {
 	srcH := bounds.Dy()
 
 	result := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
-	for y := 0; y < targetH; y++ {
-		for x := 0; x < targetW; x++ {
+	for y := range targetH {
+		for x := range targetW {
 			srcX := bounds.Min.X + x*srcW/targetW
 			srcY := bounds.Min.Y + y*srcH/targetH
-			result.SetRGBA(x, y, img.At(srcX, srcY).(color.RGBA))
+
+			c, ok := color.NRGBAModel.Convert(img.At(srcX, srcY)).(*color.NRGBA)
+			if !ok {
+				continue
+			}
+
+			result.SetRGBA(x, y, color.RGBA{
+				R: c.R,
+				G: c.G,
+				B: c.B,
+				A: c.A,
+			})
 		}
 	}
+
 	return result
 }
 
@@ -394,8 +464,10 @@ func clamp(v float64) uint8 {
 	if v < 0 {
 		return 0
 	}
+
 	if v > 255 {
 		return 255
 	}
+
 	return uint8(v)
 }

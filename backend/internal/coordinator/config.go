@@ -1,9 +1,11 @@
+// Package coordinator provides the HTTP API and orchestration logic for image/video processing.
 package coordinator
 
 import (
 	"github.com/christianmz565/microphoto/pkg/env"
 )
 
+// Config holds the configuration for the coordinator service.
 type Config struct {
 	Port           string
 	MetricsPort    int

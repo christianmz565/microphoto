@@ -1,3 +1,4 @@
+// Package env provides helpers for reading environment variables with fallback defaults.
 package env
 
 import (
@@ -11,6 +12,7 @@ func String(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
 	}
+
 	return fallback
 }
 
@@ -21,6 +23,7 @@ func Int(key string, fallback int) int {
 	if value, err := strconv.Atoi(valueStr); err == nil {
 		return value
 	}
+
 	return fallback
 }
 
@@ -31,6 +34,7 @@ func Int64(key string, fallback int64) int64 {
 	if value, err := strconv.ParseInt(valueStr, 10, 64); err == nil {
 		return value
 	}
+
 	return fallback
 }
 
@@ -41,5 +45,6 @@ func Bool(key string, fallback bool) bool {
 	if value, err := strconv.ParseBool(valueStr); err == nil {
 		return value
 	}
+
 	return fallback
 }

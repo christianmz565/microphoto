@@ -10,12 +10,9 @@ import (
 	"github.com/christianmz565/microphoto/pkg/client/metrics"
 	"github.com/christianmz565/microphoto/pkg/client/minio"
 	"github.com/christianmz565/microphoto/pkg/client/redis"
+	"github.com/christianmz565/microphoto/pkg/model"
 	jobs "github.com/christianmz565/microphoto/proto/jobs/v1"
 	"github.com/google/uuid"
-)
-
-const (
-	BucketName = "microphoto"
 )
 
 // Orchestrator coordinates the image processing tasks by splitting images into subtasks and managing their lifecycle.
@@ -35,11 +32,12 @@ func NewOrchestrator(r *redis.Client, m *minio.Client, mt *metrics.Metrics) *Orc
 }
 
 // ProcessImage handles the initial image upload and pushes a SLICE task to Redis.
-func (o *Orchestrator) ProcessImage(ctx context.Context, taskID string, file io.Reader, filename string, jobType jobs.JobType, size int64, params map[string]string) error {
+func (o *Orchestrator) ProcessImage(ctx context.Context, taskID string, file io.Reader, _ string, jobType jobs.JobType, size int64, params map[string]string) error {
 	startTime := time.Now()
 
-	path := fmt.Sprintf("%s/original.png", taskID)
-	_, err := o.minio.UploadObject(ctx, BucketName, path, file, size, "image/png")
+	path := taskID + "/original.png"
+
+	_, err := o.minio.UploadObject(ctx, model.BucketName, path, file, size, "image/png")
 	if err != nil {
 		return fmt.Errorf("upload to minio: %w", err)
 	}
@@ -73,22 +71,23 @@ func (o *Orchestrator) ProcessImage(ctx context.Context, taskID string, file io.
 
 // DownloadResult downloads the final processed image from MinIO.
 func (o *Orchestrator) DownloadResult(ctx context.Context, taskID string) (io.ReadCloser, error) {
-	path := fmt.Sprintf("%s/final.png", taskID)
-	return o.minio.DownloadObject(ctx, BucketName, path)
+	path := taskID + "/final.png"
+	return o.minio.DownloadObject(ctx, model.BucketName, path)
 }
 
 // DownloadVideoResult downloads the final processed video from MinIO.
 func (o *Orchestrator) DownloadVideoResult(ctx context.Context, taskID string) (io.ReadCloser, error) {
-	path := fmt.Sprintf("%s/final.mp4", taskID)
-	return o.minio.DownloadObject(ctx, BucketName, path)
+	path := taskID + "/final.mp4"
+	return o.minio.DownloadObject(ctx, model.BucketName, path)
 }
 
 // ProcessVideo handles video upload and pushes a VIDEO_EXTRACT task to Redis.
-func (o *Orchestrator) ProcessVideo(ctx context.Context, taskID string, file io.Reader, filename string, jobType jobs.JobType, size int64, params map[string]string) error {
+func (o *Orchestrator) ProcessVideo(ctx context.Context, taskID string, file io.Reader, _ string, jobType jobs.JobType, size int64, params map[string]string) error {
 	startTime := time.Now()
 
-	path := fmt.Sprintf("%s/video.mp4", taskID)
-	_, err := o.minio.UploadObject(ctx, BucketName, path, file, size, "video/mp4")
+	path := taskID + "/video.mp4"
+
+	_, err := o.minio.UploadObject(ctx, model.BucketName, path, file, size, "video/mp4")
 	if err != nil {
 		return fmt.Errorf("upload to minio: %w", err)
 	}

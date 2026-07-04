@@ -28,10 +28,7 @@ import (
 	jobs "github.com/christianmz565/microphoto/proto/jobs/v1"
 	"github.com/google/uuid"
 	"github.com/h2non/bimg"
-)
-
-const (
-	BucketName = "microphoto"
+	"golang.org/x/sync/errgroup"
 )
 
 // Processor handles the image processing tasks.
@@ -52,9 +49,15 @@ func NewProcessor(r *redis.Client, m *minio.Client, mt *metrics.Metrics, workerI
 	}
 }
 
+type subTaskResult struct {
+	job *jobs.Job
+	err error
+}
+
 // HandleJob dispatches the job to the appropriate handler based on its type.
 func (p *Processor) HandleJob(ctx context.Context, job *jobs.Job) error {
 	startTime := time.Now()
+
 	var err error
 
 	defer func() {
@@ -62,8 +65,7 @@ func (p *Processor) HandleJob(ctx context.Context, job *jobs.Job) error {
 		p.metrics.RecordTaskProcessed(ctx, p.workerID, job.Type.String())
 
 		if err != nil {
-			// Terminal error: notify the frontend
-			p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+			_ = p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
 				JobID:    job.ParentId,
 				WorkerID: p.workerID,
 				Status:   "JOB_FAILED",
@@ -81,15 +83,43 @@ func (p *Processor) HandleJob(ctx context.Context, job *jobs.Job) error {
 		err = p.handleVideoExtract(ctx, job)
 	case jobs.JobType_JOB_TYPE_VIDEO_REASSEMBLE:
 		err = p.handleVideoReassemble(ctx, job)
-	default:
+	case jobs.JobType_JOB_TYPE_RESIZE,
+		jobs.JobType_JOB_TYPE_GRAYSCALE,
+		jobs.JobType_JOB_TYPE_BLUR,
+		jobs.JobType_JOB_TYPE_BRIGHTNESS,
+		jobs.JobType_JOB_TYPE_UNSPECIFIED:
 		err = p.handleProcess(ctx, job)
 	}
 
 	return err
 }
 
+func calcPadding(radius float64, startY, endY, height int) (paddingTop, paddingBottom int) {
+	if radius <= 0 {
+		return 0, 0
+	}
+
+	rInt := int(math.Ceil(radius))
+
+	if startY > 0 {
+		paddingTop = rInt
+		if startY-paddingTop < 0 {
+			paddingTop = startY
+		}
+	}
+
+	if endY < height {
+		paddingBottom = rInt
+		if endY+paddingBottom > height {
+			paddingBottom = height - endY
+		}
+	}
+
+	return paddingTop, paddingBottom
+}
+
 func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
-	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+	_ = p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
 		JobID:    job.ParentId,
 		WorkerID: p.workerID,
 		Status:   "SLICING",
@@ -97,7 +127,7 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 		Message:  "Dividiendo la imagen para procesamiento paralelo...",
 	})
 
-	reader, err := p.minio.DownloadObject(ctx, BucketName, job.OriginalImagePath)
+	reader, err := p.minio.DownloadObject(ctx, model.BucketName, job.OriginalImagePath)
 	if err != nil {
 		return fmt.Errorf("download original: %w", err)
 	}
@@ -115,8 +145,11 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 
 	W, H := metadata.Size.Width, metadata.Size.Height
 	totalPixels := W * H
-	const MaxPixelsPerSubtask = 1000000
-	const DefaultAttempts = 3
+
+	const (
+		MaxPixelsPerSubtask = 1000000
+		DefaultAttempts     = 3
+	)
 
 	N := int(math.Ceil(float64(totalPixels) / float64(MaxPixelsPerSubtask)))
 	if N <= 0 {
@@ -130,9 +163,11 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 	}
 
 	var subtasks []*jobs.Job
+
 	targetType := jobs.JobType(jobs.JobType_value[job.Parameters["target_type"]])
 
 	radius := 0.0
+
 	if targetType == jobs.JobType_JOB_TYPE_BLUR {
 		if r, err := strconv.ParseFloat(job.Parameters["radius"], 64); err == nil {
 			radius = r
@@ -141,88 +176,28 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 		}
 	}
 
-	type subTaskResult struct {
-		job *jobs.Job
-		err error
-	}
-	resChan := make(chan subTaskResult, N)
+	results := make([]subTaskResult, N)
 
-	for i := 0; i < N; i++ {
-		go func(i int) {
-			startY := i * rowsPerSubtask
-			endY := (i + 1) * rowsPerSubtask
-			if i == N-1 {
-				endY = H
-			}
+	var g errgroup.Group
+	g.SetLimit(N)
 
-			paddingTop := 0
-			paddingBottom := 0
-			if radius > 0 {
-				rInt := int(math.Ceil(radius))
-				if startY > 0 {
-					paddingTop = rInt
-					if startY-paddingTop < 0 {
-						paddingTop = startY
-					}
-				}
-				if endY < H {
-					paddingBottom = rInt
-					if endY+paddingBottom > H {
-						paddingBottom = H - endY
-					}
-				}
-			}
+	for i := range N {
+		g.Go(func() error {
+			results[i] = p.createSliceSubtask(ctx, job, buf, i, N, W, H, rowsPerSubtask, targetType, radius)
 
-			fragmentHeight := (endY + paddingBottom) - (startY - paddingTop)
-			fragmentBuf, err := ExtractRegion(buf, 0, startY-paddingTop, W, fragmentHeight)
-			if err != nil {
-				resChan <- subTaskResult{err: fmt.Errorf("extract fragment %d: %w", i, err)}
-				return
-			}
-
-			fragmentPath := fmt.Sprintf("%s/sub_%d.png", job.ParentId, i)
-			_, err = p.minio.UploadObject(ctx, BucketName, fragmentPath, bytes.NewReader(fragmentBuf), int64(len(fragmentBuf)), "image/png")
-			if err != nil {
-				resChan <- subTaskResult{err: fmt.Errorf("upload fragment %d: %w", i, err)}
-				return
-			}
-
-			subJobParams := make(map[string]string)
-			maps.Copy(subJobParams, job.Parameters)
-			subJobParams["index"] = fmt.Sprintf("%d", i)
-			subJobParams["total_subtasks"] = fmt.Sprintf("%d", N)
-			subJobParams["original_width"] = fmt.Sprintf("%d", W)
-			subJobParams["original_height"] = fmt.Sprintf("%d", H)
-			subJobParams["padding_top"] = fmt.Sprintf("%d", paddingTop)
-			subJobParams["padding_bottom"] = fmt.Sprintf("%d", paddingBottom)
-
-			subJobID := uuid.New().String()
-			subJob := &jobs.Job{
-				Id:                subJobID,
-				Type:              targetType,
-				Status:            jobs.JobStatus_JOB_STATUS_UNSPECIFIED,
-				OriginalImagePath: fragmentPath,
-				ParentId:          job.ParentId,
-				Region: &jobs.Region{
-					X:      0,
-					Y:      0,
-					Width:  int32(W),
-					Height: int32(fragmentHeight),
-				},
-				Attempts:   DefaultAttempts,
-				CreatedAt:  time.Now().Unix(),
-				Timestamp:  time.Now().Unix(),
-				Parameters: subJobParams,
-			}
-			resChan <- subTaskResult{job: subJob}
-		}(i)
+			return nil
+		})
 	}
 
-	for i := 0; i < N; i++ {
-		res := <-resChan
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	for _, res := range results {
 		if res.err != nil {
 			return res.err
 		}
+
 		subtasks = append(subtasks, res.job)
 	}
 
@@ -234,7 +209,7 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 		return fmt.Errorf("push subtasks: %w", err)
 	}
 
-	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+	_ = p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
 		JobID:    job.ParentId,
 		WorkerID: p.workerID,
 		Status:   "PROCESSING",
@@ -245,11 +220,91 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 	return nil
 }
 
-func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
-	// We don't publish progress for every subtask start to avoid flooding,
-	// but we could if needed. For now, we update on completion.
+func (p *Processor) createSliceSubtask(ctx context.Context, job *jobs.Job, buf []byte, i, n, w, h, rowsPerSubtask int, targetType jobs.JobType, radius float64) subTaskResult {
+	startY := i * rowsPerSubtask
 
-	reader, err := p.minio.DownloadObject(ctx, BucketName, job.OriginalImagePath)
+	endY := (i + 1) * rowsPerSubtask
+	if i == n-1 {
+		endY = h
+	}
+
+	paddingTop, paddingBottom := calcPadding(radius, startY, endY, h)
+
+	fragmentHeight := (endY + paddingBottom) - (startY - paddingTop)
+
+	fragmentBuf, err := ExtractRegion(buf, 0, startY-paddingTop, w, fragmentHeight)
+	if err != nil {
+		return subTaskResult{err: fmt.Errorf("extract fragment %d: %w", i, err)}
+	}
+
+	fragmentPath := job.ParentId + "/sub_" + strconv.Itoa(i) + ".png"
+
+	_, err = p.minio.UploadObject(ctx, model.BucketName, fragmentPath, bytes.NewReader(fragmentBuf), int64(len(fragmentBuf)), "image/png")
+	if err != nil {
+		return subTaskResult{err: fmt.Errorf("upload fragment %d: %w", i, err)}
+	}
+
+	subJobParams := make(map[string]string)
+	maps.Copy(subJobParams, job.Parameters)
+	subJobParams["index"] = strconv.Itoa(i)
+	subJobParams["total_subtasks"] = strconv.Itoa(n)
+	subJobParams["original_width"] = strconv.Itoa(w)
+	subJobParams["original_height"] = strconv.Itoa(h)
+	subJobParams["padding_top"] = strconv.Itoa(paddingTop)
+	subJobParams["padding_bottom"] = strconv.Itoa(paddingBottom)
+
+	subJob := &jobs.Job{
+		Id:                uuid.New().String(),
+		Type:              targetType,
+		Status:            jobs.JobStatus_JOB_STATUS_UNSPECIFIED,
+		OriginalImagePath: fragmentPath,
+		ParentId:          job.ParentId,
+		Region: &jobs.Region{
+			X:      0,
+			Y:      0,
+			Width:  int32(w),
+			Height: int32(fragmentHeight),
+		},
+		Attempts:   3,
+		CreatedAt:  time.Now().Unix(),
+		Timestamp:  time.Now().Unix(),
+		Parameters: subJobParams,
+	}
+
+	return subTaskResult{job: subJob}
+}
+
+func cropPadding(processed []byte, job *jobs.Job) ([]byte, error) {
+	paddingTop, _ := strconv.Atoi(job.Parameters["padding_top"])
+	paddingBottom, _ := strconv.Atoi(job.Parameters["padding_bottom"])
+
+	if paddingTop <= 0 && paddingBottom <= 0 {
+		return processed, nil
+	}
+
+	metadata, err := bimg.Metadata(processed)
+	if err != nil {
+		return nil, fmt.Errorf("get processed metadata: %w", err)
+	}
+
+	if job.Type == jobs.JobType_JOB_TYPE_RESIZE {
+		originalHeight, _ := strconv.Atoi(job.Parameters["original_height"])
+		targetHeight, _ := strconv.Atoi(job.Parameters["height"])
+		scaleY := float64(targetHeight) / float64(originalHeight)
+		paddingTop = int(float64(paddingTop) * scaleY)
+		paddingBottom = int(float64(paddingBottom) * scaleY)
+	}
+
+	cropHeight := metadata.Size.Height - paddingTop - paddingBottom
+	if cropHeight <= 0 {
+		return processed, nil
+	}
+
+	return ExtractRegion(processed, 0, paddingTop, metadata.Size.Width, cropHeight)
+}
+
+func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
+	reader, err := p.minio.DownloadObject(ctx, model.BucketName, job.OriginalImagePath)
 	if err != nil {
 		return fmt.Errorf("download original: %w", err)
 	}
@@ -261,48 +316,26 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 	}
 
 	var processed []byte
+
 	if job.Parameters["is_segment"] == "true" {
 		processed, err = p.ProcessVideoSegment(ctx, job, buf)
 	} else {
 		processed, err = p.applyEffectsPipeline(buf, job)
 	}
-
 	if err != nil {
 		return fmt.Errorf("apply filter: %w", err)
 	}
 
 	if job.Parameters["is_segment"] != "true" {
-		paddingTop, _ := strconv.Atoi(job.Parameters["padding_top"])
-		paddingBottom, _ := strconv.Atoi(job.Parameters["padding_bottom"])
-
-		if paddingTop > 0 || paddingBottom > 0 {
-			metadata, err := bimg.Metadata(processed)
-			if err != nil {
-				return fmt.Errorf("get processed metadata: %w", err)
-			}
-
-			if job.Type == jobs.JobType_JOB_TYPE_RESIZE {
-				originalHeight, _ := strconv.Atoi(job.Parameters["original_height"])
-				targetHeight, _ := strconv.Atoi(job.Parameters["height"])
-				scaleY := float64(targetHeight) / float64(originalHeight)
-				paddingTop = int(float64(paddingTop) * scaleY)
-				paddingBottom = int(float64(paddingBottom) * scaleY)
-			}
-
-			cropY := paddingTop
-			cropHeight := metadata.Size.Height - paddingTop - paddingBottom
-			if cropHeight > 0 {
-				processed, err = ExtractRegion(processed, 0, cropY, metadata.Size.Width, cropHeight)
-				if err != nil {
-					return fmt.Errorf("crop padding: %w", err)
-				}
-			}
+		processed, err = cropPadding(processed, job)
+		if err != nil {
+			return fmt.Errorf("crop padding: %w", err)
 		}
 	}
 
 	index := job.Parameters["index"]
 	var resultPath string
-	var mimeType string = "image/png"
+	mimeType := "image/png"
 	if job.Parameters["is_segment"] == "true" {
 		idx, _ := strconv.Atoi(index)
 		resultPath = fmt.Sprintf("%s/res_part_%03d.mp4", job.ParentId, idx)
@@ -314,7 +347,7 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 		resultPath = fmt.Sprintf("%s/res_sub_%s.png", job.ParentId, index)
 	}
 
-	_, err = p.minio.UploadObject(ctx, BucketName, resultPath, bytes.NewReader(processed), int64(len(processed)), mimeType)
+	_, err = p.minio.UploadObject(ctx, model.BucketName, resultPath, bytes.NewReader(processed), int64(len(processed)), mimeType)
 	if err != nil {
 		return fmt.Errorf("upload processed subtask: %w", err)
 	}
@@ -329,7 +362,7 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 	completed := total - int(count)
 	progress := 0.10 + (float64(completed)/float64(total))*0.80
 
-	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+	_ = p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
 		JobID:    job.ParentId,
 		WorkerID: p.workerID,
 		Status:   "PROCESSING",
@@ -340,43 +373,54 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 	log.Printf("Task %s: subtasks remaining: %d", job.ParentId, count)
 
 	if count <= 0 {
-		triggerKey := fmt.Sprintf(`{"global"}:reconstruct_triggered:%s`, job.ParentId)
-		ok, err := p.redis.SetNX(ctx, triggerKey, "1", 24*time.Hour)
-		if err != nil {
-			return fmt.Errorf("check reconstruction trigger: %w", err)
-		}
-
-		if ok {
-			var nextJob *jobs.Job
-			if job.Parameters["is_video"] == "true" {
-				nextJob = &jobs.Job{
-					Id:                fmt.Sprintf("reassemble-%s", job.ParentId),
-					Type:              jobs.JobType_JOB_TYPE_VIDEO_REASSEMBLE,
-					ParentId:          job.ParentId,
-					OriginalImagePath: job.OriginalImagePath,
-					CreatedAt:         time.Now().Unix(),
-					Timestamp:         time.Now().Unix(),
-					Parameters:        job.Parameters,
-				}
-			} else {
-				nextJob = &jobs.Job{
-					Id:                fmt.Sprintf("recon-%s", job.ParentId),
-					Type:              jobs.JobType_JOB_TYPE_RECONSTRUCT,
-					ParentId:          job.ParentId,
-					OriginalImagePath: job.OriginalImagePath,
-					CreatedAt:         time.Now().Unix(),
-					Timestamp:         time.Now().Unix(),
-					Parameters:        job.Parameters,
-				}
-			}
-
-			err = p.redis.PushTask(ctx, nextJob)
-			if err != nil {
-				return fmt.Errorf("push next task: %w", err)
-			}
-			log.Printf("Triggered next step for task %s", job.ParentId)
+		if err := p.triggerReconstruction(ctx, job); err != nil {
+			return err
 		}
 	}
+
+	return nil
+}
+
+func (p *Processor) triggerReconstruction(ctx context.Context, job *jobs.Job) error {
+	triggerKey := "{\"global\"}:reconstruct_triggered:" + job.ParentId
+
+	ok, err := p.redis.SetNX(ctx, triggerKey, "1", 24*time.Hour)
+	if err != nil {
+		return fmt.Errorf("check reconstruction trigger: %w", err)
+	}
+
+	if !ok {
+		return nil
+	}
+
+	var nextJob *jobs.Job
+	if job.Parameters["is_video"] == "true" {
+		nextJob = &jobs.Job{
+			Id:                "reassemble-" + job.ParentId,
+			Type:              jobs.JobType_JOB_TYPE_VIDEO_REASSEMBLE,
+			ParentId:          job.ParentId,
+			OriginalImagePath: job.OriginalImagePath,
+			CreatedAt:         time.Now().Unix(),
+			Timestamp:         time.Now().Unix(),
+			Parameters:        job.Parameters,
+		}
+	} else {
+		nextJob = &jobs.Job{
+			Id:                "recon-" + job.ParentId,
+			Type:              jobs.JobType_JOB_TYPE_RECONSTRUCT,
+			ParentId:          job.ParentId,
+			OriginalImagePath: job.OriginalImagePath,
+			CreatedAt:         time.Now().Unix(),
+			Timestamp:         time.Now().Unix(),
+			Parameters:        job.Parameters,
+		}
+	}
+
+	if err := p.redis.PushTask(ctx, nextJob); err != nil {
+		return fmt.Errorf("push next task: %w", err)
+	}
+
+	log.Printf("Triggered next step for task %s", job.ParentId)
 
 	return nil
 }
@@ -384,7 +428,7 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 func (p *Processor) handleReconstruct(ctx context.Context, job *jobs.Job) error {
 	log.Printf("Starting reconstruction for task %s", job.ParentId)
 
-	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+	_ = p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
 		JobID:    job.ParentId,
 		WorkerID: p.workerID,
 		Status:   "RECONSTRUCTING",
@@ -402,6 +446,7 @@ func (p *Processor) handleReconstruct(ctx context.Context, job *jobs.Job) error 
 	if w, err := strconv.Atoi(job.Parameters["width"]); err == nil && w > 0 {
 		targetWidth = w
 	}
+
 	if h, err := strconv.Atoi(job.Parameters["height"]); err == nil && h > 0 {
 		targetHeight = h
 	}
@@ -412,39 +457,34 @@ func (p *Processor) handleReconstruct(ctx context.Context, job *jobs.Job) error 
 
 	finalImg := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
 
-	type subImgResult struct {
-		index int
-		img   image.Image
-		err   error
-	}
-	resChan := make(chan subImgResult, totalSubtasks)
+	subImages := make([]image.Image, totalSubtasks)
+
+	var g errgroup.Group
+	g.SetLimit(totalSubtasks)
 
 	for i := range totalSubtasks {
-		go func(i int) {
+		g.Go(func() error {
 			path := fmt.Sprintf("%s/res_sub_%d.png", job.ParentId, i)
-			subReader, err := p.minio.DownloadObject(ctx, BucketName, path)
+
+			subReader, err := p.minio.DownloadObject(ctx, model.BucketName, path)
 			if err != nil {
-				resChan <- subImgResult{err: fmt.Errorf("download subtask %d: %w", i, err)}
-				return
+				return fmt.Errorf("download subtask %d: %w", i, err)
 			}
 			defer subReader.Close()
 
 			subImg, _, err := image.Decode(subReader)
 			if err != nil {
-				resChan <- subImgResult{err: fmt.Errorf("decode subtask %d: %w", i, err)}
-				return
+				return fmt.Errorf("decode subtask %d: %w", i, err)
 			}
-			resChan <- subImgResult{index: i, img: subImg}
-		}(i)
+
+			subImages[i] = subImg
+
+			return nil
+		})
 	}
 
-	subImages := make([]image.Image, totalSubtasks)
-	for range totalSubtasks {
-		res := <-resChan
-		if res.err != nil {
-			return res.err
-		}
-		subImages[res.index] = res.img
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	currentY := 0
@@ -453,18 +493,19 @@ func (p *Processor) handleReconstruct(ctx context.Context, job *jobs.Job) error 
 		currentY += subImg.Bounds().Dy()
 	}
 
-	finalPath := fmt.Sprintf("%s/final.png", job.ParentId)
+	finalPath := job.ParentId + "/final.png"
+
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, finalImg); err != nil {
 		return fmt.Errorf("encode final png: %w", err)
 	}
 
-	_, err := p.minio.UploadObject(ctx, BucketName, finalPath, &buf, int64(buf.Len()), "image/png")
+	_, err := p.minio.UploadObject(ctx, model.BucketName, finalPath, &buf, int64(buf.Len()), "image/png")
 	if err != nil {
 		return fmt.Errorf("upload final image: %w", err)
 	}
 
-	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+	_ = p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
 		JobID:     job.ParentId,
 		WorkerID:  p.workerID,
 		Status:    "JOB_COMPLETED",
@@ -474,13 +515,14 @@ func (p *Processor) handleReconstruct(ctx context.Context, job *jobs.Job) error 
 	})
 
 	log.Printf("Completed reconstruction for task %s", job.ParentId)
+
 	return nil
 }
 
 func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error {
 	log.Printf("Starting video segment splitting for task %s", job.ParentId)
 
-	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+	_ = p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
 		JobID:    job.ParentId,
 		WorkerID: p.workerID,
 		Status:   "EXTRACTING",
@@ -488,7 +530,7 @@ func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error
 		Message:  "Dividiendo video en partes para procesamiento paralelo...",
 	})
 
-	reader, err := p.minio.DownloadObject(ctx, BucketName, job.OriginalImagePath)
+	reader, err := p.minio.DownloadObject(ctx, model.BucketName, job.OriginalImagePath)
 	if err != nil {
 		return fmt.Errorf("download video: %w", err)
 	}
@@ -500,20 +542,20 @@ func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error
 	}
 
 	tmpVideo := fmt.Sprintf("/tmp/video_%s.mp4", job.ParentId)
-	if err := os.WriteFile(tmpVideo, buf, 0644); err != nil {
+	if err := os.WriteFile(tmpVideo, buf, 0o644); err != nil {
 		return fmt.Errorf("write temp video: %w", err)
 	}
-	defer os.Remove(tmpVideo)
+	defer func() { _ = os.Remove(tmpVideo) }()
 
-	width, height, fps, err := getVideoMetadata(tmpVideo)
+	width, height, fps, err := getVideoMetadata(ctx, tmpVideo)
 	if err != nil {
 		return fmt.Errorf("get video metadata: %w", err)
 	}
 
-	tmpPartsDir := fmt.Sprintf("/tmp/parts_%s", job.ParentId)
-	defer os.RemoveAll(tmpPartsDir)
+	tmpPartsDir := "/tmp/parts_" + job.ParentId
+	defer func() { _ = os.RemoveAll(tmpPartsDir) }()
 
-	parts, err := SplitVideoIntoSegments(tmpVideo, tmpPartsDir, 3) // 3-second segments
+	parts, err := SplitVideoIntoSegments(ctx, tmpVideo, tmpPartsDir, 3) // 3-second segments
 	if err != nil {
 		return fmt.Errorf("split video into segments: %w", err)
 	}
@@ -521,9 +563,11 @@ func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error
 	log.Printf("Task %s: split video into %d parts (%dx%d) at %.2f FPS", job.ParentId, len(parts), width, height, fps)
 
 	targetType := jobs.JobType(jobs.JobType_value[job.Parameters["target_type"]])
+
 	const DefaultAttempts = 3
 
 	var subtasks []*jobs.Job
+
 	for i, partPath := range parts {
 		partData, err := os.ReadFile(partPath)
 		if err != nil {
@@ -531,17 +575,17 @@ func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error
 		}
 
 		partMinioPath := fmt.Sprintf("%s/part_%03d.mp4", job.ParentId, i)
-		_, err = p.minio.UploadObject(ctx, BucketName, partMinioPath, bytes.NewReader(partData), int64(len(partData)), "video/mp4")
+		_, err = p.minio.UploadObject(ctx, model.BucketName, partMinioPath, bytes.NewReader(partData), int64(len(partData)), "video/mp4")
 		if err != nil {
 			return fmt.Errorf("upload segment part %d: %w", i, err)
 		}
 
 		subJobParams := make(map[string]string)
 		maps.Copy(subJobParams, job.Parameters)
-		subJobParams["index"] = fmt.Sprintf("%d", i)
-		subJobParams["total_subtasks"] = fmt.Sprintf("%d", len(parts))
-		subJobParams["original_width"] = fmt.Sprintf("%d", width)
-		subJobParams["original_height"] = fmt.Sprintf("%d", height)
+		subJobParams["index"] = strconv.Itoa(i)
+		subJobParams["total_subtasks"] = strconv.Itoa(len(parts))
+		subJobParams["original_width"] = strconv.Itoa(width)
+		subJobParams["original_height"] = strconv.Itoa(height)
 		subJobParams["fps"] = fmt.Sprintf("%.3f", fps)
 		subJobParams["is_segment"] = "true"
 		subJobParams["padding_top"] = "0"
@@ -575,7 +619,7 @@ func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error
 		return fmt.Errorf("push segment jobs: %w", err)
 	}
 
-	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+	_ = p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
 		JobID:    job.ParentId,
 		WorkerID: p.workerID,
 		Status:   "PROCESSING",
@@ -589,7 +633,7 @@ func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error
 func (p *Processor) handleVideoReassemble(ctx context.Context, job *jobs.Job) error {
 	log.Printf("Starting video reassembly for task %s", job.ParentId)
 
-	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+	_ = p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
 		JobID:    job.ParentId,
 		WorkerID: p.workerID,
 		Status:   "REASSEMBLING",
@@ -599,64 +643,65 @@ func (p *Processor) handleVideoReassemble(ctx context.Context, job *jobs.Job) er
 
 	totalParts, _ := strconv.Atoi(job.Parameters["total_subtasks"])
 
-	tmpDir := fmt.Sprintf("/tmp/reassemble_%s", job.ParentId)
-	defer os.RemoveAll(tmpDir)
+	tmpDir := "/tmp/reassemble_" + job.ParentId
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
 
 	var inputsContent strings.Builder
 
 	// Download all processed segments
-	for i := 0; i < totalParts; i++ {
+	for i := range totalParts {
 		path := fmt.Sprintf("%s/res_part_%03d.mp4", job.ParentId, i)
-		reader, err := p.minio.DownloadObject(ctx, BucketName, path)
+		reader, err := p.minio.DownloadObject(ctx, model.BucketName, path)
 		if err != nil {
 			return fmt.Errorf("download segment part %d: %w", i, err)
 		}
 
 		partData, err := io.ReadAll(reader)
 		reader.Close()
+
 		if err != nil {
 			return fmt.Errorf("read segment part %d: %w", i, err)
 		}
 
 		tmpPath := filepath.Join(tmpDir, fmt.Sprintf("part_%03d.mp4", i))
-		if err := os.WriteFile(tmpPath, partData, 0644); err != nil {
+		if err := os.WriteFile(tmpPath, partData, 0o644); err != nil {
 			return fmt.Errorf("write segment part %d: %w", i, err)
 		}
 
-		inputsContent.WriteString(fmt.Sprintf("file '%s'\n", tmpPath))
+		_, _ = fmt.Fprintf(&inputsContent, "file '%s'\n", tmpPath)
 	}
 
 	inputsTxtPath := filepath.Join(tmpDir, "inputs.txt")
-	if err := os.WriteFile(inputsTxtPath, []byte(inputsContent.String()), 0644); err != nil {
+	if err := os.WriteFile(inputsTxtPath, []byte(inputsContent.String()), 0o644); err != nil {
 		return fmt.Errorf("write inputs.txt: %w", err)
 	}
 
 	// Concatenate segments
 	tmpVideo := filepath.Join(tmpDir, "output.mp4")
-	cmd := exec.Command("ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", inputsTxtPath, "-c", "copy", tmpVideo)
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", inputsTxtPath, "-c", "copy", tmpVideo)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg concat: %w: %s", err, stderr.String())
 	}
 
-	// Upload final video
 	videoData, err := os.ReadFile(tmpVideo)
 	if err != nil {
 		return fmt.Errorf("read output video: %w", err)
 	}
 
-	finalPath := fmt.Sprintf("%s/final.mp4", job.ParentId)
-	_, err = p.minio.UploadObject(ctx, BucketName, finalPath, bytes.NewReader(videoData), int64(len(videoData)), "video/mp4")
+	finalPath := job.ParentId + "/final.mp4"
+
+	_, err = p.minio.UploadObject(ctx, model.BucketName, finalPath, bytes.NewReader(videoData), int64(len(videoData)), "video/mp4")
 	if err != nil {
 		return fmt.Errorf("upload final video: %w", err)
 	}
 
-	p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+	_ = p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
 		JobID:     job.ParentId,
 		WorkerID:  p.workerID,
 		Status:    "JOB_COMPLETED",
@@ -666,6 +711,7 @@ func (p *Processor) handleVideoReassemble(ctx context.Context, job *jobs.Job) er
 	})
 
 	log.Printf("Completed video reassembly for task %s", job.ParentId)
+
 	return nil
 }
 
@@ -682,33 +728,46 @@ func (p *Processor) ProcessVideoSegment(ctx context.Context, job *jobs.Job, inpu
 	}
 
 	tmpFramesDir := filepath.Join(tmpDir, "frames")
-	frames, width, height, fps, err := ExtractFrames(tmpInputVideo, tmpFramesDir)
+	frames, width, height, fps, err := ExtractFrames(ctx, tmpInputVideo, tmpFramesDir)
 	if err != nil {
 		return nil, fmt.Errorf("extract segment frames: %w", err)
 	}
 
-	_ = width  // not used directly, metadata inherited from parent
+	_ = width
 	_ = height
 
-	// Process each frame
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(8)
+
 	for _, frame := range frames {
-		frameData, err := os.ReadFile(frame.Path)
-		if err != nil {
-			return nil, fmt.Errorf("read frame %d: %w", frame.Index, err)
-		}
+		g.Go(func() error {
+			if gCtx.Err() != nil {
+				return gCtx.Err()
+			}
 
-		processed, err := p.applyEffectsPipeline(frameData, job)
-		if err != nil {
-			return nil, fmt.Errorf("process segment frame %d: %w", frame.Index, err)
-		}
+			frameData, err := os.ReadFile(frame.Path)
+			if err != nil {
+				return fmt.Errorf("read frame %d: %w", frame.Index, err)
+			}
 
-		if err := os.WriteFile(frame.Path, processed, 0644); err != nil {
-			return nil, fmt.Errorf("write processed frame %d: %w", frame.Index, err)
-		}
+			processed, err := p.applyEffectsPipeline(frameData, job)
+			if err != nil {
+				return fmt.Errorf("process segment frame %d: %w", frame.Index, err)
+			}
+
+			if err := os.WriteFile(frame.Path, processed, 0o644); err != nil {
+				return fmt.Errorf("write processed frame %d: %w", frame.Index, err)
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	tmpOutputVideo := filepath.Join(tmpDir, "output.mp4")
-	if err := ReassembleVideo(tmpFramesDir, tmpOutputVideo, fps); err != nil {
+	if err := ReassembleVideo(ctx, tmpFramesDir, tmpOutputVideo, fps); err != nil {
 		return nil, fmt.Errorf("reassemble processed segment: %w", err)
 	}
 
@@ -720,7 +779,7 @@ func (p *Processor) ProcessVideoSegment(ctx context.Context, job *jobs.Job, inpu
 	return outputData, nil
 }
 
-type PipelineEffect struct {
+type pipelineEffect struct {
 	Type   string            `json:"type"`
 	Params map[string]string `json:"params"`
 }
@@ -731,7 +790,7 @@ func (p *Processor) applyEffectsPipeline(data []byte, job *jobs.Job) ([]byte, er
 		return p.applySingleFilter(data, job.Type, job.Parameters, job.Region)
 	}
 
-	var effects []PipelineEffect
+	var effects []pipelineEffect
 	if err := json.Unmarshal([]byte(effectsJSON), &effects); err != nil {
 		log.Printf("Warning: failed to unmarshal effects JSON: %v. Falling back to single filter.", err)
 		return p.applySingleFilter(data, job.Type, job.Parameters, job.Region)

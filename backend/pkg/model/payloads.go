@@ -1,5 +1,6 @@
 package model
 
+// ProgressPayload represents a task progress update message.
 type ProgressPayload struct {
 	JobID     string  `json:"job_id"`
 	WorkerID  string  `json:"worker_id,omitempty"`
@@ -10,6 +11,7 @@ type ProgressPayload struct {
 	Timestamp int64   `json:"timestamp"`
 }
 
+// EventNotification represents a notification event sent via SSE.
 type EventNotification struct {
 	Type      string `json:"type"`
 	Payload   any    `json:"payload"`

@@ -50,6 +50,9 @@
             just
             vips
             pkg-config
+
+            typst
+            tinymist
           ];
 
           buildInputs = [ pkgs.bashInteractive ];
