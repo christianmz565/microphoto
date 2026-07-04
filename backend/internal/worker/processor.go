@@ -3,6 +3,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/draw"
@@ -263,41 +264,7 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 	if job.Parameters["is_segment"] == "true" {
 		processed, err = p.ProcessVideoSegment(ctx, job, buf)
 	} else {
-		switch job.Type {
-		case jobs.JobType_JOB_TYPE_GRAYSCALE:
-			processed, err = ApplyGrayscale(buf)
-		case jobs.JobType_JOB_TYPE_BLUR:
-			radius := 1.0
-			if r, err := strconv.ParseFloat(job.Parameters["radius"], 64); err == nil {
-				radius = r
-			}
-			processed, err = ApplyBlur(buf, radius)
-		case jobs.JobType_JOB_TYPE_BRIGHTNESS:
-			factor := 1.0
-			if f, err := strconv.ParseFloat(job.Parameters["factor"], 64); err == nil {
-				factor = f
-			}
-			processed, err = ApplyBrightness(buf, factor)
-		case jobs.JobType_JOB_TYPE_RESIZE:
-			targetWidth, _ := strconv.Atoi(job.Parameters["width"])
-			targetHeight, _ := strconv.Atoi(job.Parameters["height"])
-			originalWidth, _ := strconv.Atoi(job.Parameters["original_width"])
-			originalHeight, _ := strconv.Atoi(job.Parameters["original_height"])
-
-			if originalHeight > 0 && originalWidth > 0 && targetHeight > 0 && targetWidth > 0 {
-				scaleY := float64(targetHeight) / float64(originalHeight)
-				newFragHeight := int(float64(job.Region.Height) * scaleY)
-
-				scaleX := float64(targetWidth) / float64(originalWidth)
-				newFragWidth := int(float64(job.Region.Width) * scaleX)
-
-				processed, err = ApplyResize(buf, newFragWidth, newFragHeight)
-			} else {
-				processed = buf
-			}
-		default:
-			processed = buf
-		}
+		processed, err = p.applyEffectsPipeline(buf, job)
 	}
 
 	if err != nil {
@@ -730,34 +697,7 @@ func (p *Processor) ProcessVideoSegment(ctx context.Context, job *jobs.Job, inpu
 			return nil, fmt.Errorf("read frame %d: %w", frame.Index, err)
 		}
 
-		var processed []byte
-		switch job.Type {
-		case jobs.JobType_JOB_TYPE_GRAYSCALE:
-			processed, err = ApplyGrayscale(frameData)
-		case jobs.JobType_JOB_TYPE_BLUR:
-			radius := 1.0
-			if r, err := strconv.ParseFloat(job.Parameters["radius"], 64); err == nil {
-				radius = r
-			}
-			processed, err = ApplyBlur(frameData, radius)
-		case jobs.JobType_JOB_TYPE_BRIGHTNESS:
-			factor := 1.0
-			if f, err := strconv.ParseFloat(job.Parameters["factor"], 64); err == nil {
-				factor = f
-			}
-			processed, err = ApplyBrightness(frameData, factor)
-		case jobs.JobType_JOB_TYPE_RESIZE:
-			targetWidth, _ := strconv.Atoi(job.Parameters["width"])
-			targetHeight, _ := strconv.Atoi(job.Parameters["height"])
-			if targetWidth > 0 && targetHeight > 0 {
-				processed, err = ApplyResize(frameData, targetWidth, targetHeight)
-			} else {
-				processed = frameData
-			}
-		default:
-			processed = frameData
-		}
-
+		processed, err := p.applyEffectsPipeline(frameData, job)
 		if err != nil {
 			return nil, fmt.Errorf("process segment frame %d: %w", frame.Index, err)
 		}
@@ -778,4 +718,92 @@ func (p *Processor) ProcessVideoSegment(ctx context.Context, job *jobs.Job, inpu
 	}
 
 	return outputData, nil
+}
+
+type PipelineEffect struct {
+	Type   string            `json:"type"`
+	Params map[string]string `json:"params"`
+}
+
+func (p *Processor) applyEffectsPipeline(data []byte, job *jobs.Job) ([]byte, error) {
+	effectsJSON := job.Parameters["effects"]
+	if effectsJSON == "" {
+		return p.applySingleFilter(data, job.Type, job.Parameters, job.Region)
+	}
+
+	var effects []PipelineEffect
+	if err := json.Unmarshal([]byte(effectsJSON), &effects); err != nil {
+		log.Printf("Warning: failed to unmarshal effects JSON: %v. Falling back to single filter.", err)
+		return p.applySingleFilter(data, job.Type, job.Parameters, job.Region)
+	}
+
+	current := data
+	var err error
+	for _, effect := range effects {
+		var jobType jobs.JobType
+		switch effect.Type {
+		case "GRAYSCALE":
+			jobType = jobs.JobType_JOB_TYPE_GRAYSCALE
+		case "BLUR":
+			jobType = jobs.JobType_JOB_TYPE_BLUR
+		case "BRIGHTNESS":
+			jobType = jobs.JobType_JOB_TYPE_BRIGHTNESS
+		case "RESIZE":
+			jobType = jobs.JobType_JOB_TYPE_RESIZE
+		default:
+			jobType = jobs.JobType_JOB_TYPE_UNSPECIFIED
+		}
+
+		current, err = p.applySingleFilter(current, jobType, effect.Params, job.Region)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return current, nil
+}
+
+func (p *Processor) applySingleFilter(data []byte, jobType jobs.JobType, params map[string]string, region *jobs.Region) ([]byte, error) {
+	var processed []byte
+	var err error
+
+	switch jobType {
+	case jobs.JobType_JOB_TYPE_GRAYSCALE:
+		processed, err = ApplyGrayscale(data)
+	case jobs.JobType_JOB_TYPE_BLUR:
+		radius := 1.0
+		if r, err := strconv.ParseFloat(params["radius"], 64); err == nil {
+			radius = r
+		}
+		processed, err = ApplyBlur(data, radius)
+	case jobs.JobType_JOB_TYPE_BRIGHTNESS:
+		factor := 1.0
+		if f, err := strconv.ParseFloat(params["factor"], 64); err == nil {
+			factor = f
+		}
+		processed, err = ApplyBrightness(data, factor)
+	case jobs.JobType_JOB_TYPE_RESIZE:
+		targetWidth, _ := strconv.Atoi(params["width"])
+		targetHeight, _ := strconv.Atoi(params["height"])
+		originalWidth, _ := strconv.Atoi(params["original_width"])
+		originalHeight, _ := strconv.Atoi(params["original_height"])
+
+		if region != nil && originalHeight > 0 && originalWidth > 0 && targetHeight > 0 && targetWidth > 0 {
+			scaleY := float64(targetHeight) / float64(originalHeight)
+			newFragHeight := int(float64(region.Height) * scaleY)
+
+			scaleX := float64(targetWidth) / float64(originalWidth)
+			newFragWidth := int(float64(region.Width) * scaleX)
+
+			processed, err = ApplyResize(data, newFragWidth, newFragHeight)
+		} else if targetWidth > 0 && targetHeight > 0 {
+			processed, err = ApplyResize(data, targetWidth, targetHeight)
+		} else {
+			processed = data
+		}
+	default:
+		processed = data
+	}
+
+	return processed, err
 }

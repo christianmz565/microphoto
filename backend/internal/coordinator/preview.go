@@ -12,6 +12,7 @@ import (
 	_ "image/jpeg"
 	"image/png"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"os"
@@ -80,13 +81,23 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 		// Prepare parameters
 		params := make(map[string]string)
 		if len(effects) > 0 {
-			for k, v := range effects[0].Params {
+			for k, v := range map[string]string(effects[0].Params) {
 				params[k] = v
 			}
 		}
+		if effectsJSON != "" {
+			params["effects"] = effectsJSON
+		}
+
+		// Cut the video to a max of 2 seconds for ultra-fast preview processing
+		cutData, err := cutVideoPreview(data, 2)
+		if err != nil {
+			log.Printf("Failed to cut preview video: %v, using original video", err)
+			cutData = data
+		}
 
 		// Start distributed video processing
-		err = h.orchestrator.ProcessVideo(r.Context(), taskID, bytes.NewReader(data), header.Filename, targetType, int64(len(data)), params)
+		err = h.orchestrator.ProcessVideo(r.Context(), taskID, bytes.NewReader(cutData), header.Filename, targetType, int64(len(cutData)), params)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to start distributed video preview: %v", err), http.StatusInternalServerError)
 			return
@@ -210,6 +221,34 @@ func extractFirstFrame(videoData []byte) (image.Image, error) {
 	}
 
 	return img, nil
+}
+
+func cutVideoPreview(videoData []byte, durationSec int) ([]byte, error) {
+	tmpDir, err := os.MkdirTemp("", "preview-cut-*")
+	if err != nil {
+		return nil, fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	tmpInput := filepath.Join(tmpDir, "input.mp4")
+	if err := os.WriteFile(tmpInput, videoData, 0644); err != nil {
+		return nil, fmt.Errorf("write temp input: %w", err)
+	}
+
+	tmpOutput := filepath.Join(tmpDir, "output.mp4")
+	cmd := exec.Command("ffmpeg", "-y", "-ss", "0", "-t", strconv.Itoa(durationSec), "-i", tmpInput, "-c", "copy", "-map", "0", "-avoid_negative_ts", "1", tmpOutput)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("ffmpeg cut: %w: %s", err, stderr.String())
+	}
+
+	outputData, err := os.ReadFile(tmpOutput)
+	if err != nil {
+		return nil, fmt.Errorf("read cut video: %w", err)
+	}
+
+	return outputData, nil
 }
 
 func applyEffect(img image.Image, effectType string, params map[string]string) image.Image {
