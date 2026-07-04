@@ -16,15 +16,15 @@ type FrameInfo struct {
 	Index int
 }
 
-func ExtractFrames(videoPath string, outputDir string) ([]FrameInfo, int, int, error) {
+func ExtractFrames(videoPath string, outputDir string) ([]FrameInfo, int, int, float64, error) {
 	if err := ensureDir(outputDir); err != nil {
-		return nil, 0, 0, fmt.Errorf("create output dir: %w", err)
+		return nil, 0, 0, 0, fmt.Errorf("create output dir: %w", err)
 	}
 
 	// Get video metadata
 	width, height, fps, err := getVideoMetadata(videoPath)
 	if err != nil {
-		return nil, 0, 0, fmt.Errorf("get metadata: %w", err)
+		return nil, 0, 0, 0, fmt.Errorf("get metadata: %w", err)
 	}
 
 	// Extract frames as PNG
@@ -33,13 +33,13 @@ func ExtractFrames(videoPath string, outputDir string) ([]FrameInfo, int, int, e
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, 0, 0, fmt.Errorf("ffmpeg extract: %w: %s", err, stderr.String())
+		return nil, 0, 0, 0, fmt.Errorf("ffmpeg extract: %w: %s", err, stderr.String())
 	}
 
 	// Count extracted frames
 	matches, err := filepath.Glob(filepath.Join(outputDir, "frame_*.png"))
 	if err != nil {
-		return nil, 0, 0, fmt.Errorf("glob frames: %w", err)
+		return nil, 0, 0, 0, fmt.Errorf("glob frames: %w", err)
 	}
 
 	frames := make([]FrameInfo, len(matches))
@@ -47,9 +47,7 @@ func ExtractFrames(videoPath string, outputDir string) ([]FrameInfo, int, int, e
 		frames[i] = FrameInfo{Path: m, Index: i}
 	}
 
-	_ = fps // fps is used by the caller for reassembly
-
-	return frames, width, height, nil
+	return frames, width, height, fps, nil
 }
 
 func getVideoMetadata(videoPath string) (int, int, float64, error) {
@@ -109,4 +107,25 @@ func ReassembleVideo(frameDir string, outputVideoPath string, fps float64) error
 
 func ensureDir(dir string) error {
 	return exec.Command("mkdir", "-p", dir).Run()
+}
+
+func SplitVideoIntoSegments(videoPath string, outputDir string, segmentTimeSec int) ([]string, error) {
+	if err := ensureDir(outputDir); err != nil {
+		return nil, fmt.Errorf("create output dir: %w", err)
+	}
+
+	pattern := filepath.Join(outputDir, "part_%03d.mp4")
+	cmd := exec.Command("ffmpeg", "-y", "-i", videoPath, "-c", "copy", "-map", "0", "-segment_time", strconv.Itoa(segmentTimeSec), "-f", "segment", pattern)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("ffmpeg split: %w: %s", err, stderr.String())
+	}
+
+	matches, err := filepath.Glob(filepath.Join(outputDir, "part_*.mp4"))
+	if err != nil {
+		return nil, fmt.Errorf("glob segments: %w", err)
+	}
+
+	return matches, nil
 }

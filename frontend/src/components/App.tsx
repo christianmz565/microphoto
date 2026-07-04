@@ -41,9 +41,7 @@ export default function App() {
         </Tabs>
       )}
 
-      {imageFile && (
-        <ImageEditor file={imageFile} onBack={handleBack} />
-      )}
+      {imageFile && <ImageEditor file={imageFile} onBack={handleBack} />}
     </main>
   );
 }

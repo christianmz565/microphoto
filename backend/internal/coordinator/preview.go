@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -11,12 +12,18 @@ import (
 	_ "image/jpeg"
 	"image/png"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"time"
+
+	"github.com/christianmz565/microphoto/pkg/model"
+	jobs "github.com/christianmz565/microphoto/proto/jobs/v1"
+	"github.com/google/uuid"
 )
 
 type Effect struct {
@@ -62,19 +69,91 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 	// Check if it's a video file
 	isVideo := isVideoFile(header.Filename, data)
 
-	var img image.Image
 	if isVideo {
-		img, err = extractFirstFrame(data)
+		taskID := fmt.Sprintf("preview-vid-%s", uuid.New().String())
+
+		// Parse job type
+		var targetType jobs.JobType = jobs.JobType_JOB_TYPE_GRAYSCALE
+		if len(effects) > 0 {
+			targetType = parseJobType(effects[0].Type)
+		}
+
+		// Prepare parameters
+		params := make(map[string]string)
+		if len(effects) > 0 {
+			for k, v := range map[string]string(effects[0].Params) {
+				params[k] = v
+			}
+		}
+		if effectsJSON != "" {
+			params["effects"] = effectsJSON
+		}
+
+		// Cut the video to a max of 2 seconds for ultra-fast preview processing
+		cutData, err := cutVideoPreview(data, 2)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to extract frame from video: %v", err), http.StatusInternalServerError)
+			log.Printf("Failed to cut preview video: %v, using original video", err)
+			cutData = data
+		}
+
+		// Start distributed video processing
+		err = h.orchestrator.ProcessVideo(r.Context(), taskID, bytes.NewReader(cutData), header.Filename, targetType, int64(len(cutData)), params)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to start distributed video preview: %v", err), http.StatusInternalServerError)
 			return
 		}
-	} else {
-		img, _, err = image.Decode(bytes.NewReader(data))
+
+		// Subscribe to progress events to wait for completion
+		pubsub, ch := h.orchestrator.redis.SubscribeProgress(r.Context(), taskID)
+		defer pubsub.Close()
+
+		// Wait for completion (or timeout/failure)
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+		defer cancel()
+
+		completed := false
+		for !completed {
+			select {
+			case <-ctx.Done():
+				http.Error(w, "Video preview generation timed out", http.StatusGatewayTimeout)
+				return
+			case msg, ok := <-ch:
+				if !ok {
+					http.Error(w, "Progress channel closed", http.StatusInternalServerError)
+					return
+				}
+
+				var event model.ProgressPayload
+				if err := json.Unmarshal([]byte(msg.Payload), &event); err == nil {
+					if event.Status == "JOB_COMPLETED" {
+						completed = true
+					} else if event.Status == "JOB_FAILED" {
+						http.Error(w, fmt.Sprintf("Distributed preview failed: %s", event.Message), http.StatusInternalServerError)
+						return
+					}
+				}
+			}
+		}
+
+		// Download result
+		reader, err := h.orchestrator.DownloadVideoResult(r.Context(), taskID)
 		if err != nil {
-			http.Error(w, "Failed to decode image", http.StatusBadRequest)
+			http.Error(w, fmt.Sprintf("Failed to download video result: %v", err), http.StatusInternalServerError)
 			return
 		}
+		defer reader.Close()
+
+		// Set headers and write video data
+		w.Header().Set("Content-Type", "video/mp4")
+		io.Copy(w, reader)
+		return
+	}
+
+	// Image preview processing
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		http.Error(w, "Failed to decode image", http.StatusBadRequest)
+		return
 	}
 
 	for _, effect := range effects {
@@ -142,6 +221,34 @@ func extractFirstFrame(videoData []byte) (image.Image, error) {
 	}
 
 	return img, nil
+}
+
+func cutVideoPreview(videoData []byte, durationSec int) ([]byte, error) {
+	tmpDir, err := os.MkdirTemp("", "preview-cut-*")
+	if err != nil {
+		return nil, fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	tmpInput := filepath.Join(tmpDir, "input.mp4")
+	if err := os.WriteFile(tmpInput, videoData, 0644); err != nil {
+		return nil, fmt.Errorf("write temp input: %w", err)
+	}
+
+	tmpOutput := filepath.Join(tmpDir, "output.mp4")
+	cmd := exec.Command("ffmpeg", "-y", "-ss", "0", "-t", strconv.Itoa(durationSec), "-i", tmpInput, "-c", "copy", "-map", "0", "-avoid_negative_ts", "1", tmpOutput)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("ffmpeg cut: %w: %s", err, stderr.String())
+	}
+
+	outputData, err := os.ReadFile(tmpOutput)
+	if err != nil {
+		return nil, fmt.Errorf("read cut video: %w", err)
+	}
+
+	return outputData, nil
 }
 
 func applyEffect(img image.Image, effectType string, params map[string]string) image.Image {

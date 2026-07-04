@@ -8,19 +8,21 @@ interface ResultPreviewProps {
   resultBlob: Blob;
   onReset: () => void;
   taskID: string;
+  isVideo?: boolean;
 }
 
 export function ResultPreview({
   resultBlob,
   onReset,
   taskID,
+  isVideo,
 }: ResultPreviewProps) {
-  const imageUrl = URL.createObjectURL(resultBlob);
+  const fileUrl = URL.createObjectURL(resultBlob);
 
   const handleDownload = () => {
     const a = document.createElement('a');
-    a.href = imageUrl;
-    a.download = 'processed.png';
+    a.href = fileUrl;
+    a.download = isVideo ? 'processed.mp4' : 'processed.png';
     a.click();
   };
 
@@ -33,11 +35,22 @@ export function ResultPreview({
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-6">
-          <img
-            src={imageUrl}
-            alt="Processed"
-            className="max-h-80 rounded-lg object-contain shadow-2xl"
-          />
+          {isVideo ? (
+            <video
+              src={fileUrl}
+              className="max-h-80 rounded-lg object-contain shadow-2xl"
+              controls
+              autoPlay
+              loop
+              muted
+            />
+          ) : (
+            <img
+              src={fileUrl}
+              alt="Processed"
+              className="max-h-80 rounded-lg object-contain shadow-2xl"
+            />
+          )}
           <div className="flex w-full gap-3">
             <Button onClick={handleDownload} className="flex-1">
               <IconDownload className="size-4" />
@@ -51,7 +64,7 @@ export function ResultPreview({
         </CardContent>
       </Card>
 
-      <ProgressTracker taskID={taskID} />
+      <ProgressTracker taskID={taskID} isVideo={isVideo} />
     </div>
   );
 }

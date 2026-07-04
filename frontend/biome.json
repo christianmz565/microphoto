@@ -7,7 +7,13 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["src/**", "astro.config.mjs", "tsconfig.json", "components.json", "biome.json"]
+    "includes": [
+      "src/**",
+      "astro.config.mjs",
+      "tsconfig.json",
+      "components.json",
+      "biome.json"
+    ]
   },
   "formatter": {
     "enabled": true,
