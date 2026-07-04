@@ -313,7 +313,9 @@
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Effect Controls */
@@ -444,7 +446,9 @@
   background: oklch(0.987 0.002 197.1);
   border: 2px solid oklch(0.45 0.085 224.283);
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .effect-slider::-webkit-slider-thumb:hover {
@@ -459,7 +463,9 @@
   background: oklch(0.987 0.002 197.1);
   border: 2px solid oklch(0.45 0.085 224.283);
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .effect-slider::-moz-range-thumb:hover {

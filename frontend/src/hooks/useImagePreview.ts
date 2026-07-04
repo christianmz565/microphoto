@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { previewImage, type PreviewEffect } from '@/lib/api';
+import { type PreviewEffect, previewImage } from '@/lib/api';
 
 export interface ImageEffects {
   grayscale: number;
@@ -25,7 +25,10 @@ function buildEffectsList(effects: ImageEffects): PreviewEffect[] {
     list.push({ type: 'BLUR', params: { radius: String(effects.blur) } });
   }
   if (effects.brightness !== 1) {
-    list.push({ type: 'BRIGHTNESS', params: { factor: String(effects.brightness) } });
+    list.push({
+      type: 'BRIGHTNESS',
+      params: { factor: String(effects.brightness) },
+    });
   }
 
   return list;

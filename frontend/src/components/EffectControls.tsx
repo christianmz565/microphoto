@@ -82,8 +82,7 @@ export function EffectControls({
         {sliders.map((slider) => {
           const value = effects[slider.key];
           const isDefault = value === slider.default;
-          const pct =
-            ((value - slider.min) / (slider.max - slider.min)) * 100;
+          const pct = ((value - slider.min) / (slider.max - slider.min)) * 100;
 
           return (
             <div
@@ -108,7 +107,10 @@ export function EffectControls({
                   step={slider.step}
                   value={value}
                   onChange={(e) =>
-                    onEffectChange(slider.key, Number.parseFloat(e.target.value))
+                    onEffectChange(
+                      slider.key,
+                      Number.parseFloat(e.target.value),
+                    )
                   }
                   className="effect-slider"
                   style={
