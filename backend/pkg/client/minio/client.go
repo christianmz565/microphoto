@@ -1,3 +1,4 @@
+// Package minio provides a client wrapper for MinIO object storage.
 package minio
 
 import (
@@ -9,10 +10,12 @@ import (
 	"github.com/minio/minio-go/v7/pkg/lifecycle"
 )
 
+// Client wraps a MinIO client for object storage operations.
 type Client struct {
 	minioClient *minio.Client
 }
 
+// NewClient creates a new MinIO client connected to the specified endpoint.
 func NewClient(endpoint, accessKey, secretKey string, useSSL bool) (*Client, error) {
 	minioClient, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
@@ -25,14 +28,14 @@ func NewClient(endpoint, accessKey, secretKey string, useSSL bool) (*Client, err
 	return &Client{minioClient: minioClient}, nil
 }
 
-// UploadObject uploads an object to the specified bucket and path
+// UploadObject uploads an object to the specified bucket and path.
 func (c *Client) UploadObject(ctx context.Context, bucket, path string, reader io.Reader, size int64, contentType string) (minio.UploadInfo, error) {
 	return c.minioClient.PutObject(ctx, bucket, path, reader, size, minio.PutObjectOptions{
 		ContentType: contentType,
 	})
 }
 
-// DownloadObject downloads an object from the specified bucket and path
+// DownloadObject downloads an object from the specified bucket and path.
 func (c *Client) DownloadObject(ctx context.Context, bucket, path string) (io.ReadCloser, error) {
 	obj, err := c.minioClient.GetObject(ctx, bucket, path, minio.GetObjectOptions{})
 	if err != nil {
@@ -75,17 +78,19 @@ func (c *Client) SetupLifecyclePolicy(ctx context.Context, bucket string) error 
 	return c.minioClient.SetBucketLifecycle(ctx, bucket, config)
 }
 
-// EnsureBucket ensures that the bucket exists
+// EnsureBucket ensures that the bucket exists.
 func (c *Client) EnsureBucket(ctx context.Context, bucket string) error {
 	exists, err := c.minioClient.BucketExists(ctx, bucket)
 	if err != nil {
 		return err
 	}
+
 	if !exists {
 		err = c.minioClient.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
 		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }

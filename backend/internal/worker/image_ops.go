@@ -9,6 +9,7 @@ func ApplyGrayscale(buf []byte) ([]byte, error) {
 	options := bimg.Options{
 		Interpretation: bimg.InterpretationBW,
 	}
+
 	return bimg.NewImage(buf).Process(options)
 }
 
@@ -17,6 +18,7 @@ func ApplyBrightness(buf []byte, factor float64) ([]byte, error) {
 	options := bimg.Options{
 		Contrast: factor,
 	}
+
 	return bimg.NewImage(buf).Process(options)
 }
 
@@ -27,6 +29,7 @@ func ApplyBlur(buf []byte, sigma float64) ([]byte, error) {
 			Sigma: sigma,
 		},
 	}
+
 	return bimg.NewImage(buf).Process(options)
 }
 
@@ -41,6 +44,7 @@ func ApplyResize(buf []byte, targetWidth, targetHeight int) ([]byte, error) {
 		Height: targetHeight,
 		Force:  true,
 	}
+
 	return bimg.NewImage(buf).Process(options)
 }
 

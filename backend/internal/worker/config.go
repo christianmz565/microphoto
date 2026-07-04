@@ -1,9 +1,11 @@
+// Package worker handles image/video processing tasks.
 package worker
 
 import (
 	"github.com/christianmz565/microphoto/pkg/env"
 )
 
+// Config holds the configuration for the worker service.
 type Config struct {
 	MetricsPort    int
 	RedisAddr      string

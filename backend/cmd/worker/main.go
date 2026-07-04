@@ -1,3 +1,4 @@
+// Package main is the entry point for the worker service.
 package main
 
 import (
@@ -15,8 +16,8 @@ import (
 )
 
 func main() {
-	workerID, _ := os.Hostname()
-	if workerID == "" {
+	workerID, err := os.Hostname()
+	if err != nil || workerID == "" {
 		workerID = "unknown-worker"
 	}
 
@@ -28,32 +29,26 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize metrics: %v", err)
 	}
+
 	metrics.StartMetricsServer(cfg.MetricsPort)
 
 	rClient, err := redis.NewClient(cfg.RedisAddr)
 	if err != nil {
 		log.Fatalf("Failed to initialize redis: %v", err)
 	}
-	defer rClient.Close()
 
 	mClient, err := minio.NewClient(cfg.MinioEndpoint, cfg.MinioAccessKey, cfg.MinioSecretKey, cfg.MinioSSL)
 	if err != nil {
+		_ = rClient.Close()
+
 		log.Fatalf("Failed to initialize minio: %v", err)
 	}
+	defer func() { _ = rClient.Close() }()
 
 	processor := worker.NewProcessor(rClient, mClient, m, workerID)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		sig := <-sigChan
-		log.Printf("Received signal %v, shutting down...", sig)
-		cancel()
-	}()
 
 	fmt.Println("Worker ready to process tasks...")
 
@@ -68,14 +63,16 @@ func main() {
 				if ctx.Err() != nil {
 					return
 				}
+
 				log.Printf("Error popping task: %v", err)
+
 				continue
 			}
 
 			log.Printf("Processing job %s (Type: %s, Parent: %s)", job.Id, job.Type, job.ParentId)
+
 			if err := processor.HandleJob(ctx, job); err != nil {
 				log.Printf("Error handling job %s: %v", job.Id, err)
-
 				continue
 			}
 

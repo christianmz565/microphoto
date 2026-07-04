@@ -31,6 +31,15 @@ docker-all tag=VERSION:
 docker service tag=VERSION:
     docker build --target {{service}} -t {{DOCKER_IMAGE_BASE}}-{{service}}:{{tag}} .
 
+lint:
+    golangci-lint run ./...
+
+lint-fix:
+    golangci-lint run --fix ./...
+
+fmt:
+    golangci-lint fmt ./...
+
 clean:
     rm -rf {{BIN_DIR}}
     find proto -name "*.pb.go" -delete
