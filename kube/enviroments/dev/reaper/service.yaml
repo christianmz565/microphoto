@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: reaper
+  namespace: dev
+  labels:
+    app: reaper
+    app.kubernetes.io/part-of: microphoto
+spec:
+  type: ClusterIP
+  selector:
+    app: reaper
+  ports:
+    - name: http
+      port: 9092
+      targetPort: 9092

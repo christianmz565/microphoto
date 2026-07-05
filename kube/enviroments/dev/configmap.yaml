@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: microphoto-config
+  namespace: dev
+  labels:
+    app.kubernetes.io/part-of: microphoto
+data:
+  GLOBAL_TIMEOUT_SECONDS: "300"
+  REAPER_INTERVAL_SECONDS: "5"
+  PUBLIC_API_URL: "http://coordinator:8080"
