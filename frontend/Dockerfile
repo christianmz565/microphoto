@@ -1,28 +1,19 @@
-FROM oven/bun:1.2-debian AS deps
+FROM node:22-alpine AS build
 
 WORKDIR /app
 
-COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile
-
-FROM deps AS build
+COPY package*.json ./
+RUN npm install
 
 ARG PUBLIC_API_URL=http://localhost:8080
+ENV PUBLIC_API_URL=$PUBLIC_API_URL
 
 COPY . .
-RUN bun run build
+RUN npm run build
 
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:alpine AS runtime
 
-RUN rm /etc/nginx/conf.d/default.conf
-
+COPY ./nginx/nginx.conf /etc/nginx/nginx.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
-COPY nginx.conf /etc/nginx/conf.d/app.conf
-
 EXPOSE 8080
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget -qO- http://localhost:8080/ || exit 1
-
-CMD ["nginx", "-g", "daemon off;"]
