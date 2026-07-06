@@ -7,6 +7,9 @@ export interface ImageEffects {
   blur: number;
   brightness: number;
   contrast: number;
+  resize: number;
+  sepia: number;
+  vignette: number;
 }
 
 export interface SlideshowMetadata {
@@ -20,9 +23,15 @@ const defaultEffects: ImageEffects = {
   blur: 0,
   brightness: 1,
   contrast: 1,
+  resize: 1,
+  sepia: 0,
+  vignette: 0,
 };
 
-export function buildEffectsList(effects: ImageEffects): PreviewEffect[] {
+export function buildEffectsList(
+  effects: ImageEffects,
+  forPreview = false,
+): PreviewEffect[] {
   const list: PreviewEffect[] = [];
 
   if (effects.grayscale > 0) {
@@ -35,6 +44,30 @@ export function buildEffectsList(effects: ImageEffects): PreviewEffect[] {
     list.push({
       type: 'BRIGHTNESS',
       params: { factor: String(effects.brightness) },
+    });
+  }
+  if (effects.contrast !== 1) {
+    list.push({
+      type: 'CONTRAST',
+      params: { factor: String(effects.contrast) },
+    });
+  }
+  if (!forPreview && effects.resize !== 1) {
+    list.push({
+      type: 'RESIZE',
+      params: { scale: String(effects.resize) },
+    });
+  }
+  if (effects.sepia > 0) {
+    list.push({
+      type: 'SEPIA',
+      params: { intensity: String(effects.sepia) },
+    });
+  }
+  if (effects.vignette > 0) {
+    list.push({
+      type: 'VIGNETTE',
+      params: { intensity: String(effects.vignette) },
     });
   }
 
@@ -293,7 +326,7 @@ export function useImagePreview(file: File) {
       abortRef.current?.abort();
       clearTimeout(debounceRef.current);
 
-      const effectsList = buildEffectsList(currentEffects);
+      const effectsList = buildEffectsList(currentEffects, true);
 
       if (effectsList.length === 0) {
         setPreviewUrl(null);

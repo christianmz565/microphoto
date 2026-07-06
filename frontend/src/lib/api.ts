@@ -1,6 +1,6 @@
 import { PUBLIC_API_URL } from 'astro:env/client';
 
-export type FilterType = 'GRAYSCALE' | 'BLUR' | 'BRIGHTNESS' | 'RESIZE';
+export type FilterType = 'GRAYSCALE' | 'BLUR' | 'BRIGHTNESS' | 'RESIZE' | 'CONTRAST' | 'SEPIA' | 'VIGNETTE';
 
 export interface ProcessResponse {
   task_id: string;
