@@ -176,6 +176,8 @@ func (p *Processor) handleSlice(ctx context.Context, job *jobs.Job) error {
 		}
 	}
 
+	radius = getMaxBlurRadius(job.Parameters["effects"], radius)
+
 	results := make([]subTaskResult, N)
 
 	var g errgroup.Group
@@ -287,9 +289,10 @@ func cropPadding(processed []byte, job *jobs.Job) ([]byte, error) {
 		return nil, fmt.Errorf("get processed metadata: %w", err)
 	}
 
-	if job.Type == jobs.JobType_JOB_TYPE_RESIZE {
+	isResize, targetHeight := getResizeHeight(job)
+
+	if isResize && targetHeight > 0 {
 		originalHeight, _ := strconv.Atoi(job.Parameters["original_height"])
-		targetHeight, _ := strconv.Atoi(job.Parameters["height"])
 		scaleY := float64(targetHeight) / float64(originalHeight)
 		paddingTop = int(float64(paddingTop) * scaleY)
 		paddingBottom = int(float64(paddingBottom) * scaleY)
@@ -322,6 +325,7 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 	} else {
 		processed, err = p.applyEffectsPipeline(buf, job)
 	}
+
 	if err != nil {
 		return fmt.Errorf("apply filter: %w", err)
 	}
@@ -334,8 +338,11 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 	}
 
 	index := job.Parameters["index"]
+
 	var resultPath string
+
 	mimeType := "image/png"
+
 	if job.Parameters["is_segment"] == "true" {
 		idx, _ := strconv.Atoi(index)
 		resultPath = fmt.Sprintf("%s/res_part_%03d.mp4", job.ParentId, idx)
@@ -555,7 +562,14 @@ func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error
 	tmpPartsDir := "/tmp/parts_" + job.ParentId
 	defer func() { _ = os.RemoveAll(tmpPartsDir) }()
 
-	parts, err := SplitVideoIntoSegments(ctx, tmpVideo, tmpPartsDir, 3) // 3-second segments
+	segmentDuration := 3
+	if envVal := os.Getenv("SEGMENT_DURATION_SECONDS"); envVal != "" {
+		if val, err := strconv.Atoi(envVal); err == nil && val > 0 {
+			segmentDuration = val
+		}
+	}
+
+	parts, err := SplitVideoIntoSegments(ctx, tmpVideo, tmpPartsDir, segmentDuration)
 	if err != nil {
 		return fmt.Errorf("split video into segments: %w", err)
 	}
@@ -566,49 +580,58 @@ func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error
 
 	const DefaultAttempts = 3
 
-	var subtasks []*jobs.Job
+	subtasks := make([]*jobs.Job, len(parts))
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(5) // Concurrently upload up to 5 segments
 
 	for i, partPath := range parts {
-		partData, err := os.ReadFile(partPath)
-		if err != nil {
-			return fmt.Errorf("read segment part %d: %w", i, err)
-		}
+		g.Go(func() error {
+			partData, err := os.ReadFile(partPath)
+			if err != nil {
+				return fmt.Errorf("read segment part %d: %w", i, err)
+			}
 
-		partMinioPath := fmt.Sprintf("%s/part_%03d.mp4", job.ParentId, i)
-		_, err = p.minio.UploadObject(ctx, model.BucketName, partMinioPath, bytes.NewReader(partData), int64(len(partData)), "video/mp4")
-		if err != nil {
-			return fmt.Errorf("upload segment part %d: %w", i, err)
-		}
+			partMinioPath := fmt.Sprintf("%s/part_%03d.mp4", job.ParentId, i)
 
-		subJobParams := make(map[string]string)
-		maps.Copy(subJobParams, job.Parameters)
-		subJobParams["index"] = strconv.Itoa(i)
-		subJobParams["total_subtasks"] = strconv.Itoa(len(parts))
-		subJobParams["original_width"] = strconv.Itoa(width)
-		subJobParams["original_height"] = strconv.Itoa(height)
-		subJobParams["fps"] = fmt.Sprintf("%.3f", fps)
-		subJobParams["is_segment"] = "true"
-		subJobParams["padding_top"] = "0"
-		subJobParams["padding_bottom"] = "0"
+			_, err = p.minio.UploadObject(gCtx, model.BucketName, partMinioPath, bytes.NewReader(partData), int64(len(partData)), "video/mp4")
+			if err != nil {
+				return fmt.Errorf("upload segment part %d: %w", i, err)
+			}
 
-		subJob := &jobs.Job{
-			Id:                uuid.New().String(),
-			Type:              targetType,
-			Status:            jobs.JobStatus_JOB_STATUS_UNSPECIFIED,
-			OriginalImagePath: partMinioPath,
-			ParentId:          job.ParentId,
-			Region: &jobs.Region{
-				X:      0,
-				Y:      0,
-				Width:  int32(width),
-				Height: int32(height),
-			},
-			Attempts:   DefaultAttempts,
-			CreatedAt:  time.Now().Unix(),
-			Timestamp:  time.Now().Unix(),
-			Parameters: subJobParams,
-		}
-		subtasks = append(subtasks, subJob)
+			subJobParams := make(map[string]string)
+			maps.Copy(subJobParams, job.Parameters)
+			subJobParams["index"] = strconv.Itoa(i)
+			subJobParams["total_subtasks"] = strconv.Itoa(len(parts))
+			subJobParams["original_width"] = strconv.Itoa(width)
+			subJobParams["original_height"] = strconv.Itoa(height)
+			subJobParams["fps"] = fmt.Sprintf("%.3f", fps)
+			subJobParams["is_segment"] = "true"
+			subJobParams["padding_top"] = "0"
+			subJobParams["padding_bottom"] = "0"
+
+			subtasks[i] = &jobs.Job{
+				Id:                uuid.New().String(),
+				Type:              targetType,
+				Status:            jobs.JobStatus_JOB_STATUS_UNSPECIFIED,
+				OriginalImagePath: partMinioPath,
+				ParentId:          job.ParentId,
+				Region: &jobs.Region{
+					X:      0,
+					Y:      0,
+					Width:  int32(width),
+					Height: int32(height),
+				},
+				Attempts:   DefaultAttempts,
+				CreatedAt:  time.Now().Unix(),
+				Timestamp:  time.Now().Unix(),
+				Parameters: subJobParams,
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	if err := p.redis.InitializeTask(ctx, job.ParentId, len(subtasks), DefaultAttempts); err != nil {
@@ -655,6 +678,7 @@ func (p *Processor) handleVideoReassemble(ctx context.Context, job *jobs.Job) er
 	// Download all processed segments
 	for i := range totalParts {
 		path := fmt.Sprintf("%s/res_part_%03d.mp4", job.ParentId, i)
+
 		reader, err := p.minio.DownloadObject(ctx, model.BucketName, path)
 		if err != nil {
 			return fmt.Errorf("download segment part %d: %w", i, err)
@@ -683,7 +707,9 @@ func (p *Processor) handleVideoReassemble(ctx context.Context, job *jobs.Job) er
 	// Concatenate segments
 	tmpVideo := filepath.Join(tmpDir, "output.mp4")
 	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", inputsTxtPath, "-c", "copy", tmpVideo)
+
 	var stderr bytes.Buffer
+
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg concat: %w: %s", err, stderr.String())
@@ -716,18 +742,19 @@ func (p *Processor) handleVideoReassemble(ctx context.Context, job *jobs.Job) er
 }
 
 func (p *Processor) ProcessVideoSegment(ctx context.Context, job *jobs.Job, inputSegmentData []byte) ([]byte, error) {
-	tmpDir := fmt.Sprintf("/tmp/proc_seg_%s", job.Id)
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+	tmpDir := "/tmp/proc_seg_" + job.Id
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
 	tmpInputVideo := filepath.Join(tmpDir, "input.mp4")
-	if err := os.WriteFile(tmpInputVideo, inputSegmentData, 0644); err != nil {
+	if err := os.WriteFile(tmpInputVideo, inputSegmentData, 0o644); err != nil {
 		return nil, fmt.Errorf("write temp segment: %w", err)
 	}
 
 	tmpFramesDir := filepath.Join(tmpDir, "frames")
+
 	frames, width, height, fps, err := ExtractFrames(ctx, tmpInputVideo, tmpFramesDir)
 	if err != nil {
 		return nil, fmt.Errorf("extract segment frames: %w", err)
@@ -736,8 +763,15 @@ func (p *Processor) ProcessVideoSegment(ctx context.Context, job *jobs.Job, inpu
 	_ = width
 	_ = height
 
+	workerConcurrency := 8
+	if envVal := os.Getenv("WORKER_CONCURRENCY"); envVal != "" {
+		if val, err := strconv.Atoi(envVal); err == nil && val > 0 {
+			workerConcurrency = val
+		}
+	}
+
 	g, gCtx := errgroup.WithContext(ctx)
-	g.SetLimit(8)
+	g.SetLimit(workerConcurrency)
 
 	for _, frame := range frames {
 		g.Go(func() error {
@@ -758,6 +792,7 @@ func (p *Processor) ProcessVideoSegment(ctx context.Context, job *jobs.Job, inpu
 			if err := os.WriteFile(frame.Path, processed, 0o644); err != nil {
 				return fmt.Errorf("write processed frame %d: %w", frame.Index, err)
 			}
+
 			return nil
 		})
 	}
@@ -797,9 +832,12 @@ func (p *Processor) applyEffectsPipeline(data []byte, job *jobs.Job) ([]byte, er
 	}
 
 	current := data
+
 	var err error
+
 	for _, effect := range effects {
 		var jobType jobs.JobType
+
 		switch effect.Type {
 		case "GRAYSCALE":
 			jobType = jobs.JobType_JOB_TYPE_GRAYSCALE
@@ -823,8 +861,10 @@ func (p *Processor) applyEffectsPipeline(data []byte, job *jobs.Job) ([]byte, er
 }
 
 func (p *Processor) applySingleFilter(data []byte, jobType jobs.JobType, params map[string]string, region *jobs.Region) ([]byte, error) {
-	var processed []byte
-	var err error
+	var (
+		processed []byte
+		err       error
+	)
 
 	switch jobType {
 	case jobs.JobType_JOB_TYPE_GRAYSCALE:
@@ -834,12 +874,14 @@ func (p *Processor) applySingleFilter(data []byte, jobType jobs.JobType, params 
 		if r, err := strconv.ParseFloat(params["radius"], 64); err == nil {
 			radius = r
 		}
+
 		processed, err = ApplyBlur(data, radius)
 	case jobs.JobType_JOB_TYPE_BRIGHTNESS:
 		factor := 1.0
 		if f, err := strconv.ParseFloat(params["factor"], 64); err == nil {
 			factor = f
 		}
+
 		processed, err = ApplyBrightness(data, factor)
 	case jobs.JobType_JOB_TYPE_RESIZE:
 		targetWidth, _ := strconv.Atoi(params["width"])
@@ -865,4 +907,64 @@ func (p *Processor) applySingleFilter(data []byte, jobType jobs.JobType, params 
 	}
 
 	return processed, err
+}
+
+func getMaxBlurRadius(effectsJSON string, currentRadius float64) float64 {
+	if effectsJSON == "" {
+		return currentRadius
+	}
+
+	var effects []pipelineEffect
+	if err := json.Unmarshal([]byte(effectsJSON), &effects); err != nil {
+		return currentRadius
+	}
+
+	radius := currentRadius
+
+	for _, effect := range effects {
+		if effect.Type != "BLUR" {
+			continue
+		}
+
+		r, err := strconv.ParseFloat(effect.Params["radius"], 64)
+		if err != nil {
+			if radius < 1.0 {
+				radius = 1.0
+			}
+
+			continue
+		}
+
+		if r > radius {
+			radius = r
+		}
+	}
+
+	return radius
+}
+
+func getResizeHeight(job *jobs.Job) (bool, int) {
+	if job.Type == jobs.JobType_JOB_TYPE_RESIZE {
+		h, _ := strconv.Atoi(job.Parameters["height"])
+		return true, h
+	}
+
+	effectsJSON := job.Parameters["effects"]
+	if effectsJSON == "" {
+		return false, 0
+	}
+
+	var effects []pipelineEffect
+	if err := json.Unmarshal([]byte(effectsJSON), &effects); err != nil {
+		return false, 0
+	}
+
+	for _, effect := range effects {
+		if effect.Type == "RESIZE" {
+			h, _ := strconv.Atoi(effect.Params["height"])
+			return true, h
+		}
+	}
+
+	return false, 0
 }

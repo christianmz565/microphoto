@@ -6,60 +6,98 @@ export interface ProcessResponse {
   task_id: string;
 }
 
+export function uploadFileWithProgress(
+  endpoint: string,
+  fieldName: string,
+  file: File | Blob,
+  effects: PreviewEffect[],
+  filename?: string,
+  onProgress?: (progress: number) => void,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    if (filename) {
+      formData.append(fieldName, file, filename);
+    } else {
+      formData.append(fieldName, file);
+    }
+
+    if (effects.length > 0) {
+      formData.append('type', effects[0].type);
+      for (const [key, value] of Object.entries(effects[0].params)) {
+        if (value !== '') {
+          formData.append(key, value);
+        }
+      }
+    } else {
+      formData.append('type', 'UNSPECIFIED');
+    }
+    formData.append('effects', JSON.stringify(effects));
+
+    if (onProgress && xhr.upload) {
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = event.loaded / event.total;
+          onProgress(progress);
+        }
+      });
+    }
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data: ProcessResponse = JSON.parse(xhr.responseText);
+          resolve(data.task_id);
+        } catch (_e) {
+          reject(new Error('Failed to parse response'));
+        }
+      } else {
+        reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`));
+      }
+    });
+
+    xhr.addEventListener('error', () => {
+      reject(new Error('Network error during upload'));
+    });
+
+    xhr.addEventListener('abort', () => {
+      reject(new Error('Upload aborted'));
+    });
+
+    xhr.open('POST', `${PUBLIC_API_URL}${endpoint}`);
+    xhr.send(formData);
+  });
+}
+
 export async function uploadImage(
   file: File,
-  type: FilterType,
-  params: Record<string, string>,
+  effects: PreviewEffect[],
+  onProgress?: (progress: number) => void,
 ): Promise<string> {
-  const formData = new FormData();
-  formData.append('image', file);
-  formData.append('type', type);
-
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== '') {
-      formData.append(key, value);
-    }
-  }
-
-  const res = await fetch(`${PUBLIC_API_URL}/api/v1/process`, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!res.ok) {
-    throw new Error(`Upload failed: ${res.status} ${res.statusText}`);
-  }
-
-  const data: ProcessResponse = await res.json();
-  return data.task_id;
+  return uploadFileWithProgress(
+    '/api/v1/process',
+    'image',
+    file,
+    effects,
+    file.name,
+    onProgress,
+  );
 }
 
 export async function uploadVideo(
   file: File,
-  type: FilterType,
-  params: Record<string, string>,
+  effects: PreviewEffect[],
+  onProgress?: (progress: number) => void,
 ): Promise<string> {
-  const formData = new FormData();
-  formData.append('video', file);
-  formData.append('type', type);
-
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== '') {
-      formData.append(key, value);
-    }
-  }
-
-  const res = await fetch(`${PUBLIC_API_URL}/api/v1/process-video`, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!res.ok) {
-    throw new Error(`Upload failed: ${res.status} ${res.statusText}`);
-  }
-
-  const data: ProcessResponse = await res.json();
-  return data.task_id;
+  return uploadFileWithProgress(
+    '/api/v1/process-video',
+    'video',
+    file,
+    effects,
+    file.name,
+    onProgress,
+  );
 }
 
 export async function getResult(taskID: string): Promise<Blob> {

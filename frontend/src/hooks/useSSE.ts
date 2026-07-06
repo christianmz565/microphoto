@@ -5,6 +5,7 @@ import { connectToEvents } from '@/lib/api';
 export interface WorkerLog {
   id: string;
   message: string;
+  timestamp: number;
 }
 
 export interface WorkerState {
@@ -13,6 +14,7 @@ export interface WorkerState {
   message: string;
   lastUpdate: number;
   logs: WorkerLog[];
+  workCount?: number;
 }
 
 export interface SSEState {
@@ -22,6 +24,7 @@ export interface SSEState {
   isConnected: boolean;
   error: string | null;
   workers: Record<string, WorkerState>;
+  chartData: Array<Record<string, number | string>>;
 }
 
 const initialState: SSEState = {
@@ -31,6 +34,7 @@ const initialState: SSEState = {
   isConnected: false,
   error: null,
   workers: {},
+  chartData: [],
 };
 
 export function useSSE(taskID: string | null) {
@@ -42,13 +46,19 @@ export function useSSE(taskID: string | null) {
   statusRef.current = state.status;
 
   const reset = useCallback(() => {
-    setState(initialState);
+    setState({
+      ...initialState,
+      chartData: [],
+    });
     setRetryCount(0);
     processedTimestamps.current.clear();
   }, []);
 
   useEffect(() => {
-    if (!taskID) return;
+    if (!taskID) {
+      setState(initialState);
+      return;
+    }
 
     if (
       statusRef.current === 'JOB_COMPLETED' ||
@@ -88,6 +98,8 @@ export function useSSE(taskID: string | null) {
           const nextProgress = Math.max(prev.progress, data.progress ?? 0);
 
           const nextWorkers = { ...prev.workers };
+          let nextChartData = [...prev.chartData];
+
           if (data.worker_id) {
             const currentWorker = prev.workers[data.worker_id] || {
               id: data.worker_id,
@@ -95,14 +107,28 @@ export function useSSE(taskID: string | null) {
               message: '',
               lastUpdate: Date.now(),
               logs: [],
+              workCount: 0,
             };
 
+            const logTimestamp = data.timestamp ? data.timestamp : Date.now();
             const newLogs: WorkerLog[] = data.message
               ? [
                   ...currentWorker.logs,
-                  { id: tsKey, message: data.message },
+                  { id: tsKey, message: data.message, timestamp: logTimestamp },
                 ].slice(-50)
               : currentWorker.logs;
+
+            const isWorkMessage =
+              data.message &&
+              (data.message.includes('fragmento') ||
+                data.message.includes('frame') ||
+                data.message.includes('Segmento') ||
+                data.message.includes('Procesando'));
+
+            const currentWorkerWorkCount = currentWorker.workCount || 0;
+            const nextWorkCount = isWorkMessage
+              ? currentWorkerWorkCount + 1
+              : currentWorkerWorkCount;
 
             nextWorkers[data.worker_id] = {
               ...currentWorker,
@@ -110,7 +136,38 @@ export function useSSE(taskID: string | null) {
               message: data.message ?? currentWorker.message,
               lastUpdate: Date.now(),
               logs: newLogs,
+              workCount: nextWorkCount,
             };
+
+            if (isWorkMessage) {
+              let ms = logTimestamp;
+              if (logTimestamp > 99999999999999) {
+                ms = Math.floor(logTimestamp / 1000000);
+              } else if (logTimestamp < 9999999999) {
+                ms = logTimestamp * 1000;
+              }
+              const timestampStr = new Date(ms).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false,
+              });
+
+              const currentCounts: Record<string, number> = {};
+              for (const wId of Object.keys(nextWorkers)) {
+                currentCounts[`NODE-${wId.slice(0, 4)}`] =
+                  nextWorkers[wId].workCount || 0;
+              }
+
+              nextChartData.push({
+                time: timestampStr,
+                ...currentCounts,
+              });
+
+              if (nextChartData.length > 100) {
+                nextChartData = nextChartData.slice(-100);
+              }
+            }
           }
 
           return {
@@ -119,6 +176,7 @@ export function useSSE(taskID: string | null) {
             status: data.status ?? prev.status,
             message: data.message ?? prev.message,
             workers: nextWorkers,
+            chartData: nextChartData,
           };
         });
       } catch {}

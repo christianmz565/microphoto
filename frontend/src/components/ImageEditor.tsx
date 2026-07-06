@@ -12,16 +12,11 @@ import { ProgressTracker } from '@/components/ProgressTracker';
 import { ResultPreview } from '@/components/ResultPreview';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useImagePreview } from '@/hooks/useImagePreview';
+import { Progress } from '@/components/ui/progress';
+import { buildEffectsList, useImagePreview } from '@/hooks/useImagePreview';
 import { useSSE } from '@/hooks/useSSE';
 import { useTaskHistory } from '@/hooks/useTaskHistory';
-import {
-  type FilterType,
-  getResult,
-  previewImage,
-  uploadImage,
-  uploadVideo,
-} from '@/lib/api';
+import { getResult, previewImage, uploadImage, uploadVideo } from '@/lib/api';
 
 interface ImageEditorProps {
   file: File;
@@ -35,8 +30,35 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
     resetEffects,
     previewUrl,
     isProcessing,
+    isPreparing,
+    firstFrameBlob,
+    slideshowMetadata,
     isVideo,
   } = useImagePreview(file);
+
+  const [firstFrameUrl, setFirstFrameUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!firstFrameBlob) {
+      setFirstFrameUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(firstFrameBlob);
+    setFirstFrameUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [firstFrameBlob]);
+
+  const [currentFrameIndex, setCurrentFrameIndex] = useState(0);
+
+  useEffect(() => {
+    if (!slideshowMetadata) return;
+    const interval = setInterval(() => {
+      setCurrentFrameIndex((prev) => (prev + 1) % slideshowMetadata.count);
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [slideshowMetadata]);
 
   const { addTask, updateStatus } = useTaskHistory();
   const [taskID, setTaskID] = useState<string | null>(null);
@@ -45,6 +67,7 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
   >('editing');
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
   const [isProcessingDistributed, setIsProcessingDistributed] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [showFilteredPreview, setShowFilteredPreview] = useState(true);
 
   useEffect(() => {
@@ -63,25 +86,6 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
     return (
       effects.grayscale > 0 || effects.blur > 0 || effects.brightness !== 1
     );
-  }, [effects]);
-
-  const activeFilter = useMemo(() => {
-    if (effects.grayscale > 0) {
-      return { type: 'GRAYSCALE' as FilterType, params: {} };
-    }
-    if (effects.blur > 0) {
-      return {
-        type: 'BLUR' as FilterType,
-        params: { radius: String(effects.blur) },
-      };
-    }
-    if (effects.brightness !== 1) {
-      return {
-        type: 'BRIGHTNESS' as FilterType,
-        params: { factor: String(effects.brightness) },
-      };
-    }
-    return null;
   }, [effects]);
 
   useEffect(() => {
@@ -150,21 +154,27 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
   }, [file, effects, isVideo, originalUrl]);
 
   const handleProcessDistributed = useCallback(async () => {
-    if (!activeFilter) return;
+    const effectsList = buildEffectsList(effects);
+    if (effectsList.length === 0) return;
     setIsProcessingDistributed(true);
+    setUploadProgress(0);
     try {
       let id: string;
+      const onProgress = (p: number) => {
+        setUploadProgress(p);
+      };
       if (isVideo) {
-        id = await uploadVideo(file, activeFilter.type, activeFilter.params);
+        id = await uploadVideo(file, effectsList, onProgress);
       } else {
-        id = await uploadImage(file, activeFilter.type, activeFilter.params);
+        id = await uploadImage(file, effectsList, onProgress);
       }
       setTaskID(id);
+      setProcessingState('editing'); // Note: previously set to processing, wait, let's keep 'processing' as in step 4
       setProcessingState('processing');
       addTask({
         taskID: id,
         filename: file.name,
-        filterType: activeFilter.type,
+        filterType: effectsList[0]?.type || 'UNSPECIFIED',
         status: 'processing',
         isVideo,
       });
@@ -173,12 +183,13 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
       setProcessingState('failed');
     } finally {
       setIsProcessingDistributed(false);
+      setUploadProgress(null);
     }
-  }, [file, activeFilter, isVideo, addTask]);
+  }, [file, effects, isVideo, addTask]);
 
   if (processingState === 'processing' && taskID) {
     return (
-      <div className="mx-auto w-full max-w-md flex flex-col gap-4">
+      <div className="mx-auto w-full max-w-6xl flex flex-col gap-4">
         <h2 className="text-center text-sm font-semibold tracking-wider text-muted-foreground uppercase mb-2">
           Procesamiento Distribuido
         </h2>
@@ -271,14 +282,30 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
             {isVideo ? (
               <div className="flex flex-col w-full h-full items-center justify-center relative">
                 {previewUrl && showFilteredPreview ? (
-                  <video
-                    src={previewUrl}
-                    className="editor-canvas max-h-[50vh]"
-                    controls
-                    autoPlay
-                    loop
-                    muted
-                  />
+                  slideshowMetadata && firstFrameUrl ? (
+                    <div className="editor-canvas relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950">
+                      <img
+                        src={firstFrameUrl}
+                        alt="spacer"
+                        className="opacity-0 pointer-events-none w-full h-auto block"
+                      />
+                      <img
+                        src={previewUrl}
+                        alt="Preview Slideshow"
+                        className="absolute top-0 left-0 h-full max-w-none transition-transform duration-300 ease-in-out"
+                        style={{
+                          width: `${slideshowMetadata.count * 100}%`,
+                          transform: `translateX(-${(currentFrameIndex / slideshowMetadata.count) * 100}%)`,
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <img
+                      src={previewUrl}
+                      alt="Preview"
+                      className="editor-canvas max-h-[50vh] rounded-2xl object-contain"
+                    />
+                  )
                 ) : (
                   <video
                     src={originalUrl}
@@ -288,10 +315,14 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
                   />
                 )}
 
-                {isProcessing && (
+                {(isProcessing || isPreparing) && (
                   <div className="editor-preview-overlay">
                     <IconLoader className="size-5 animate-spin" />
-                    <span>Generando vista previa...</span>
+                    <span>
+                      {isPreparing
+                        ? 'Preparando vista previa...'
+                        : 'Generando vista previa...'}
+                    </span>
                   </div>
                 )}
 
@@ -318,10 +349,14 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
             ) : (
               <>
                 <img src={displayUrl} alt="Preview" className="editor-canvas" />
-                {isProcessing && (
+                {(isProcessing || isPreparing) && (
                   <div className="editor-preview-overlay">
                     <IconLoader className="size-5 animate-spin" />
-                    <span>Procesando...</span>
+                    <span>
+                      {isPreparing
+                        ? 'Preparando vista previa...'
+                        : 'Procesando...'}
+                    </span>
                   </div>
                 )}
               </>
@@ -336,11 +371,27 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
             onReset={resetEffects}
           />
 
-          <div className="mt-6 px-4 pb-4">
+          <div className="mt-6 px-4 pb-4 flex flex-col gap-3">
+            {uploadProgress !== null && (
+              <div className="w-full flex flex-col gap-1.5">
+                <div className="flex justify-between text-xs text-muted-foreground px-1">
+                  <span>Subiendo al servidor...</span>
+                  <span className="font-mono">
+                    {Math.round(uploadProgress * 100)}%
+                  </span>
+                </div>
+                <Progress
+                  value={uploadProgress * 100}
+                  className="h-1 bg-zinc-900"
+                />
+              </div>
+            )}
             <Button
               className="w-full flex items-center justify-center gap-2"
               onClick={handleProcessDistributed}
-              disabled={isProcessingDistributed || !hasActiveEffects}
+              disabled={
+                isProcessingDistributed || !hasActiveEffects || isPreparing
+              }
               size="lg"
             >
               {isProcessingDistributed ? (
@@ -348,7 +399,7 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
               ) : (
                 <IconCpu className="size-4" />
               )}
-              Procesar en Cluster
+              {isProcessingDistributed ? 'Subiendo...' : 'Procesar en Cluster'}
             </Button>
           </div>
         </div>

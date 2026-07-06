@@ -28,8 +28,13 @@ func ExtractFrames(ctx context.Context, videoPath, outputDir string) ([]FrameInf
 		return nil, 0, 0, 0, fmt.Errorf("get metadata: %w", err)
 	}
 
+	ffmpegThreads := os.Getenv("FFMPEG_THREADS")
+	if ffmpegThreads == "" {
+		ffmpegThreads = "2"
+	}
+
 	pattern := filepath.Join(outputDir, "frame_%06d.jpg")
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-i", videoPath, "-q:v", "2", "-fps_mode", "passthrough", pattern)
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-threads", ffmpegThreads, "-i", videoPath, "-q:v", "2", "-fps_mode", "passthrough", pattern)
 
 	var stderr bytes.Buffer
 
@@ -98,7 +103,13 @@ func getVideoMetadata(ctx context.Context, videoPath string) (int, int, float64,
 func ReassembleVideo(ctx context.Context, frameDir, outputVideoPath string, fps float64) error {
 	pattern := filepath.Join(frameDir, "frame_%06d.jpg")
 
+	ffmpegThreads := os.Getenv("FFMPEG_THREADS")
+	if ffmpegThreads == "" {
+		ffmpegThreads = "1"
+	}
+
 	cmd := exec.CommandContext(ctx, "ffmpeg", "-y",
+		"-threads", ffmpegThreads,
 		"-framerate", fmt.Sprintf("%.3f", fps),
 		"-i", pattern,
 		"-c:v", "libx264",
@@ -127,7 +138,9 @@ func SplitVideoIntoSegments(ctx context.Context, videoPath, outputDir string, se
 
 	pattern := filepath.Join(outputDir, "part_%03d.mp4")
 	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-i", videoPath, "-c", "copy", "-map", "0", "-segment_time", strconv.Itoa(segmentTimeSec), "-f", "segment", pattern)
+
 	var stderr bytes.Buffer
+
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("ffmpeg split: %w: %s", err, stderr.String())
