@@ -17,9 +17,9 @@ export function StatCard({
       style={
         isDecorated
           ? {
-              border: `1px solid ${color}30`,
-              background: `linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)`,
-              boxShadow: `0 0 20px ${color}15, inset 0 0 40px ${color}05`,
+              border: `1px solid color-mix(in oklab, ${color} 45%, transparent)`,
+              background: `linear-gradient(135deg, color-mix(in oklab, ${color} 12%, #05080a) 0%, color-mix(in oklab, ${color} 34%, #05080a) 100%)`,
+              boxShadow: `0 0 20px color-mix(in oklab, ${color} 22%, transparent), inset 0 0 40px color-mix(in oklab, ${color} 8%, transparent)`,
             }
           : {
               border: "1px solid rgba(255,255,255,0.1)",
