@@ -82,12 +82,6 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
 
   const { status: sseStatus, error: sseError } = useSSE(taskID);
 
-  const hasActiveEffects = useMemo(() => {
-    return (
-      effects.grayscale > 0 || effects.blur > 0 || effects.brightness !== 1
-    );
-  }, [effects]);
-
   useEffect(() => {
     if (!taskID) return;
 
@@ -155,7 +149,6 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
 
   const handleProcessDistributed = useCallback(async () => {
     const effectsList = buildEffectsList(effects);
-    if (effectsList.length === 0) return;
     setIsProcessingDistributed(true);
     setUploadProgress(0);
     try {
@@ -389,9 +382,7 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
             <Button
               className="w-full flex items-center justify-center gap-2"
               onClick={handleProcessDistributed}
-              disabled={
-                isProcessingDistributed || !hasActiveEffects || isPreparing
-              }
+              disabled={isProcessingDistributed || isPreparing}
               size="lg"
             >
               {isProcessingDistributed ? (
