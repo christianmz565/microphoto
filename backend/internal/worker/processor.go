@@ -543,16 +543,20 @@ func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error
 	}
 	defer reader.Close()
 
-	buf, err := io.ReadAll(reader)
-	if err != nil {
-		return fmt.Errorf("read video: %w", err)
-	}
-
 	tmpVideo := fmt.Sprintf("/tmp/video_%s.mp4", job.ParentId)
-	if err := os.WriteFile(tmpVideo, buf, 0o644); err != nil {
+	tmpFile, err := os.Create(tmpVideo)
+	if err != nil {
+		return fmt.Errorf("create temp video: %w", err)
+	}
+	defer func() {
+		tmpFile.Close()
+		os.Remove(tmpVideo)
+	}()
+
+	if _, err := io.Copy(tmpFile, reader); err != nil {
 		return fmt.Errorf("write temp video: %w", err)
 	}
-	defer func() { _ = os.Remove(tmpVideo) }()
+	tmpFile.Close()
 
 	width, height, fps, err := getVideoMetadata(ctx, tmpVideo)
 	if err != nil {
@@ -684,17 +688,20 @@ func (p *Processor) handleVideoReassemble(ctx context.Context, job *jobs.Job) er
 			return fmt.Errorf("download segment part %d: %w", i, err)
 		}
 
-		partData, err := io.ReadAll(reader)
-		reader.Close()
-
+		tmpPath := filepath.Join(tmpDir, fmt.Sprintf("part_%03d.mp4", i))
+		tmpFile, err := os.Create(tmpPath)
 		if err != nil {
-			return fmt.Errorf("read segment part %d: %w", i, err)
+			reader.Close()
+			return fmt.Errorf("create segment part %d: %w", i, err)
 		}
 
-		tmpPath := filepath.Join(tmpDir, fmt.Sprintf("part_%03d.mp4", i))
-		if err := os.WriteFile(tmpPath, partData, 0o644); err != nil {
+		if _, err := io.Copy(tmpFile, reader); err != nil {
+			tmpFile.Close()
+			reader.Close()
 			return fmt.Errorf("write segment part %d: %w", i, err)
 		}
+		tmpFile.Close()
+		reader.Close()
 
 		_, _ = fmt.Fprintf(&inputsContent, "file '%s'\n", tmpPath)
 	}
@@ -715,14 +722,20 @@ func (p *Processor) handleVideoReassemble(ctx context.Context, job *jobs.Job) er
 		return fmt.Errorf("ffmpeg concat: %w: %s", err, stderr.String())
 	}
 
-	videoData, err := os.ReadFile(tmpVideo)
-	if err != nil {
-		return fmt.Errorf("read output video: %w", err)
-	}
-
 	finalPath := job.ParentId + "/final.mp4"
 
-	_, err = p.minio.UploadObject(ctx, model.BucketName, finalPath, bytes.NewReader(videoData), int64(len(videoData)), "video/mp4")
+	videoFile, err := os.Open(tmpVideo)
+	if err != nil {
+		return fmt.Errorf("open output video: %w", err)
+	}
+	defer videoFile.Close()
+
+	videoStat, err := videoFile.Stat()
+	if err != nil {
+		return fmt.Errorf("stat output video: %w", err)
+	}
+
+	_, err = p.minio.UploadObject(ctx, model.BucketName, finalPath, videoFile, videoStat.Size(), "video/mp4")
 	if err != nil {
 		return fmt.Errorf("upload final video: %w", err)
 	}
