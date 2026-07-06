@@ -562,7 +562,14 @@ func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error
 	tmpPartsDir := "/tmp/parts_" + job.ParentId
 	defer func() { _ = os.RemoveAll(tmpPartsDir) }()
 
-	parts, err := SplitVideoIntoSegments(ctx, tmpVideo, tmpPartsDir, 3) // 3-second segments
+	segmentDuration := 3
+	if envVal := os.Getenv("SEGMENT_DURATION_SECONDS"); envVal != "" {
+		if val, err := strconv.Atoi(envVal); err == nil && val > 0 {
+			segmentDuration = val
+		}
+	}
+
+	parts, err := SplitVideoIntoSegments(ctx, tmpVideo, tmpPartsDir, segmentDuration)
 	if err != nil {
 		return fmt.Errorf("split video into segments: %w", err)
 	}
@@ -573,50 +580,58 @@ func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error
 
 	const DefaultAttempts = 3
 
-	var subtasks []*jobs.Job
+	subtasks := make([]*jobs.Job, len(parts))
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(5) // Concurrently upload up to 5 segments
 
 	for i, partPath := range parts {
-		partData, err := os.ReadFile(partPath)
-		if err != nil {
-			return fmt.Errorf("read segment part %d: %w", i, err)
-		}
+		g.Go(func() error {
+			partData, err := os.ReadFile(partPath)
+			if err != nil {
+				return fmt.Errorf("read segment part %d: %w", i, err)
+			}
 
-		partMinioPath := fmt.Sprintf("%s/part_%03d.mp4", job.ParentId, i)
+			partMinioPath := fmt.Sprintf("%s/part_%03d.mp4", job.ParentId, i)
 
-		_, err = p.minio.UploadObject(ctx, model.BucketName, partMinioPath, bytes.NewReader(partData), int64(len(partData)), "video/mp4")
-		if err != nil {
-			return fmt.Errorf("upload segment part %d: %w", i, err)
-		}
+			_, err = p.minio.UploadObject(gCtx, model.BucketName, partMinioPath, bytes.NewReader(partData), int64(len(partData)), "video/mp4")
+			if err != nil {
+				return fmt.Errorf("upload segment part %d: %w", i, err)
+			}
 
-		subJobParams := make(map[string]string)
-		maps.Copy(subJobParams, job.Parameters)
-		subJobParams["index"] = strconv.Itoa(i)
-		subJobParams["total_subtasks"] = strconv.Itoa(len(parts))
-		subJobParams["original_width"] = strconv.Itoa(width)
-		subJobParams["original_height"] = strconv.Itoa(height)
-		subJobParams["fps"] = fmt.Sprintf("%.3f", fps)
-		subJobParams["is_segment"] = "true"
-		subJobParams["padding_top"] = "0"
-		subJobParams["padding_bottom"] = "0"
+			subJobParams := make(map[string]string)
+			maps.Copy(subJobParams, job.Parameters)
+			subJobParams["index"] = strconv.Itoa(i)
+			subJobParams["total_subtasks"] = strconv.Itoa(len(parts))
+			subJobParams["original_width"] = strconv.Itoa(width)
+			subJobParams["original_height"] = strconv.Itoa(height)
+			subJobParams["fps"] = fmt.Sprintf("%.3f", fps)
+			subJobParams["is_segment"] = "true"
+			subJobParams["padding_top"] = "0"
+			subJobParams["padding_bottom"] = "0"
 
-		subJob := &jobs.Job{
-			Id:                uuid.New().String(),
-			Type:              targetType,
-			Status:            jobs.JobStatus_JOB_STATUS_UNSPECIFIED,
-			OriginalImagePath: partMinioPath,
-			ParentId:          job.ParentId,
-			Region: &jobs.Region{
-				X:      0,
-				Y:      0,
-				Width:  int32(width),
-				Height: int32(height),
-			},
-			Attempts:   DefaultAttempts,
-			CreatedAt:  time.Now().Unix(),
-			Timestamp:  time.Now().Unix(),
-			Parameters: subJobParams,
-		}
-		subtasks = append(subtasks, subJob)
+			subtasks[i] = &jobs.Job{
+				Id:                uuid.New().String(),
+				Type:              targetType,
+				Status:            jobs.JobStatus_JOB_STATUS_UNSPECIFIED,
+				OriginalImagePath: partMinioPath,
+				ParentId:          job.ParentId,
+				Region: &jobs.Region{
+					X:      0,
+					Y:      0,
+					Width:  int32(width),
+					Height: int32(height),
+				},
+				Attempts:   DefaultAttempts,
+				CreatedAt:  time.Now().Unix(),
+				Timestamp:  time.Now().Unix(),
+				Parameters: subJobParams,
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	if err := p.redis.InitializeTask(ctx, job.ParentId, len(subtasks), DefaultAttempts); err != nil {
