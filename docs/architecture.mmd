@@ -28,15 +28,22 @@ flowchart TD
             subgraph edge_layer[Edge]
                 TR@{ icon: "selfhst:traefik", label: "Traefik" }
             end
+            subgraph compute[Compute]
+                direction TB
+                CO@{ icon: "logos:go", label: "Coordinator" }
+                subgraph pool[Worker Pool]
+                    direction LR
+                    W1@{ icon: "logos:go", label: "Worker 1" }
+                    W2@{ icon: "logos:go", label: "Worker 2" }
+                    W3@{ icon: "logos:go", label: "Worker 3" }
+                end
+            end
             subgraph storage[Storage]
+                direction LR
                 R@{ icon: "logos:redis", label: "Redis" }
                 M@{ icon: "selfhst:minio", label: "MinIO" }
             end
-            subgraph compute[Compute]
-                CO@{ icon: "logos:go", label: "Coordinator" }
-                W1@{ icon: "logos:go", label: "Worker 1" }
-                W2@{ icon: "logos:go", label: "Worker 2" }
-                W3@{ icon: "logos:go", label: "Worker 3" }
+            subgraph reaper_group[ ]
                 RE@{ icon: "logos:go", label: "Reaper" }
             end
             subgraph observability[Observability]
@@ -71,5 +78,7 @@ flowchart TD
     style k3s fill:#ecfdf5,stroke:#047857,stroke-width:3px
     style edge_layer fill:#fef3c7,stroke:#d97706,stroke-width:2px
     style compute fill:#d1fae5,stroke:#047857,stroke-width:2px
+    style pool fill:#d1fae5,stroke:#047857,stroke-width:1px,stroke-dasharray: 2 2
     style storage fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px
+    style reaper_group fill:none,stroke:none
     style observability fill:#f3e8ff,stroke:#7e22ce,stroke-width:2px
