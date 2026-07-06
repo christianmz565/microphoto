@@ -367,7 +367,7 @@ export function ProgressTracker({ taskID, isVideo }: ProgressTrackerProps) {
                               />
                             </div>
                             <span className="font-bold text-zinc-300 uppercase">
-                              NODE-{worker.id.slice(0, 4)}
+                              NODE-{worker.id}
                             </span>
                           </div>
                           <span className="text-[8px] text-zinc-600">

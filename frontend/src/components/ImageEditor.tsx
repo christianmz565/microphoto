@@ -86,11 +86,11 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
     if (!taskID) return;
 
     if (sseStatus === 'JOB_COMPLETED') {
-      setProcessingState('completed');
       updateStatus(taskID, 'completed');
       getResult(taskID)
         .then((blob) => {
           setResultBlob(blob);
+          setProcessingState('completed');
         })
         .catch((err) => {
           console.error('Error fetching result:', err);
