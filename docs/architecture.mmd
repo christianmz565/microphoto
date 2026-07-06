@@ -1,0 +1,75 @@
+---
+config:
+  theme: base
+  themeVariables:
+    lineColor: "#475569"
+    fontFamily: "system-ui"
+    edgeLabelBackground: "rgba(220, 220, 50, 0.2)"
+    tertiaryColor: "transparent"
+  themeCSS: |
+    .nodeLabel, .edgeLabel, .label,
+    .label foreignObject div, .label foreignObject span,
+    .cluster-label,
+    foreignObject div, foreignObject span {
+      background-color: transparent !important;
+      background: none !important;
+    }
+    .label rect, .edgeLabel rect, rect.background {
+      fill: none !important;
+      opacity: 0 !important;
+    }
+---
+flowchart TD
+    subgraph ext[Cloudflare]
+        FE@{ icon: "logos:cloudflare-icon", label: "Astro + React" }
+    end
+    subgraph mesh[Tailscale Mesh]
+        subgraph k3s[k3s Cluster]
+            subgraph edge_layer[Edge]
+                TR@{ icon: "selfhst:traefik", label: "Traefik" }
+            end
+            subgraph storage[Storage]
+                R@{ icon: "logos:redis", label: "Redis" }
+                M@{ icon: "selfhst:minio", label: "MinIO" }
+            end
+            subgraph compute[Compute]
+                CO@{ icon: "logos:go", label: "Coordinator" }
+                W1@{ icon: "logos:go", label: "Worker 1" }
+                W2@{ icon: "logos:go", label: "Worker 2" }
+                W3@{ icon: "logos:go", label: "Worker 3" }
+                RE@{ icon: "logos:go", label: "Reaper" }
+            end
+            subgraph observability[Observability]
+                PR@{ icon: "logos:prometheus", label: "Prometheus" }
+                GR@{ icon: "logos:grafana", label: "Grafana" }
+            end
+        end
+    end
+    FE ==>|"HTTP + SSE"| TR
+    TR ==>|"route"| CO
+    CO -->|"LPUSH job"| R
+    R -->|"BLMOVE"| W1
+    R -->|"BLMOVE"| W2
+    R -->|"BLMOVE"| W3
+    W1 & W2 & W3 -->|"S3 read/write"| M
+    CO -->|"S3 upload"| M
+    R -.->|"timeout scan"| RE
+    CO & W1 & W2 & W3 & RE -.->|"metrics"| PR
+    PR -.->|"scrape"| GR
+    classDef frontend fill:#6d28d9,stroke:#4c1d95,stroke-width:3px,color:#000
+    classDef edge fill:#d97706,stroke:#92400e,stroke-width:3px,color:#000
+    classDef compute fill:#047857,stroke:#064e3b,stroke-width:3px,color:#000
+    classDef storage fill:#1d4ed8,stroke:#1e3a8a,stroke-width:3px,color:#000
+    classDef monitor fill:#7e22ce,stroke:#581c87,stroke-width:3px,color:#000
+    class FE frontend
+    class TR edge
+    class CO,W1,W2,W3,RE compute
+    class R,M storage
+    class PR,GR monitor
+    style ext fill:#ede9fe,stroke:#6d28d9,stroke-width:3px
+    style mesh fill:#fce7f3,stroke:#be185d,stroke-width:3px,stroke-dasharray: 5 5
+    style k3s fill:#ecfdf5,stroke:#047857,stroke-width:3px
+    style edge_layer fill:#fef3c7,stroke:#d97706,stroke-width:2px
+    style compute fill:#d1fae5,stroke:#047857,stroke-width:2px
+    style storage fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px
+    style observability fill:#f3e8ff,stroke:#7e22ce,stroke-width:2px
