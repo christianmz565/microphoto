@@ -28,7 +28,10 @@ const defaultEffects: ImageEffects = {
   vignette: 0,
 };
 
-export function buildEffectsList(effects: ImageEffects): PreviewEffect[] {
+export function buildEffectsList(
+  effects: ImageEffects,
+  forPreview = false,
+): PreviewEffect[] {
   const list: PreviewEffect[] = [];
 
   if (effects.grayscale > 0) {
@@ -49,7 +52,7 @@ export function buildEffectsList(effects: ImageEffects): PreviewEffect[] {
       params: { factor: String(effects.contrast) },
     });
   }
-  if (effects.resize !== 1) {
+  if (!forPreview && effects.resize !== 1) {
     list.push({
       type: 'RESIZE',
       params: { scale: String(effects.resize) },
@@ -323,7 +326,7 @@ export function useImagePreview(file: File) {
       abortRef.current?.abort();
       clearTimeout(debounceRef.current);
 
-      const effectsList = buildEffectsList(currentEffects);
+      const effectsList = buildEffectsList(currentEffects, true);
 
       if (effectsList.length === 0) {
         setPreviewUrl(null);
