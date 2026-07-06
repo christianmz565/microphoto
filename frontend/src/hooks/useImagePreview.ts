@@ -1,3 +1,4 @@
+// Trigger module re-parsing for Vite/Astro compilation cache
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { type PreviewEffect, previewImage } from '@/lib/api';
 

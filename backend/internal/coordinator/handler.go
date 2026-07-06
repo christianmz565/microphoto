@@ -217,10 +217,6 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 	jobTypeStr := r.FormValue("type")
 
 	jobType := parseJobType(jobTypeStr)
-	if jobType == jobs.JobType_JOB_TYPE_UNSPECIFIED {
-		http.Error(w, "Invalid job type", http.StatusBadRequest)
-		return
-	}
 
 	params := make(map[string]string)
 	if r.FormValue("radius") != "" {
@@ -330,10 +326,6 @@ func (h *HTTPHandler) ProcessVideo(w http.ResponseWriter, r *http.Request) {
 	jobTypeStr := r.FormValue("type")
 
 	jobType := parseJobType(jobTypeStr)
-	if jobType == jobs.JobType_JOB_TYPE_UNSPECIFIED {
-		http.Error(w, "Invalid job type", http.StatusBadRequest)
-		return
-	}
 
 	params := make(map[string]string)
 	if r.FormValue("fps") != "" {

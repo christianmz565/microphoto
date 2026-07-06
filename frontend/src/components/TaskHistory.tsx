@@ -13,6 +13,15 @@ import { Separator } from '@/components/ui/separator';
 import { useTaskHistory } from '@/hooks/useTaskHistory';
 import { getResult } from '@/lib/api';
 
+const formatTimestamp = (timestamp: string | number | undefined | null) => {
+  if (!timestamp) return 'Fecha no disponible';
+  const parsed = Number(timestamp);
+  const date = !Number.isNaN(parsed) ? new Date(parsed) : new Date(timestamp);
+  return Number.isNaN(date.getTime())
+    ? 'Fecha no disponible'
+    : date.toLocaleString();
+};
+
 export function TaskHistory() {
   const { tasks, removeTask, clearHistory } = useTaskHistory();
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -68,7 +77,7 @@ export function TaskHistory() {
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{task.filename}</p>
               <p className="text-xs text-muted-foreground">
-                {new Date(task.timestamp).toLocaleString()}
+                {formatTimestamp(task.timestamp)}
               </p>
             </div>
             <Badge

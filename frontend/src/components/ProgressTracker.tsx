@@ -43,11 +43,11 @@ const formatTime = (ts: number) => {
 };
 
 function WorkerWorkChart({
-  chartData,
+  chartData = [],
 }: {
-  chartData: Array<Record<string, number | string>>;
+  chartData?: Array<Record<string, number | string>>;
 }) {
-  if (chartData.length === 0) return null;
+  if (!chartData || chartData.length === 0) return null;
 
   const workerKeys = Array.from(
     new Set(
@@ -211,8 +211,15 @@ function WorkerWorkChart({
 }
 
 export function ProgressTracker({ taskID, isVideo }: ProgressTrackerProps) {
-  const { progress, status, message, isConnected, error, workers, chartData } =
-    useSSE(taskID);
+  const {
+    progress,
+    status,
+    message,
+    isConnected,
+    error,
+    workers,
+    chartData = [],
+  } = useSSE(taskID);
   const [showIndustrial, setShowIndustrial] = useState(false);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
 
