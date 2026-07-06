@@ -155,7 +155,7 @@ export function useSSE(taskID: string | null) {
 
               const currentCounts: Record<string, number> = {};
               for (const wId of Object.keys(nextWorkers)) {
-                currentCounts[`NODE-${wId.slice(0, 4)}`] =
+                currentCounts[`NODE-${wId}`] =
                   nextWorkers[wId].workCount || 0;
               }
 
