@@ -57,11 +57,18 @@ func buildFFmpegFilterChain(effectsJSON string) (string, error) {
 
 			filters = append(filters, fmt.Sprintf("eq=brightness=%.4f", eqBrightness))
 		case "RESIZE":
-			w := effect.Params["width"]
-			h := effect.Params["height"]
+			if scaleStr, ok := effect.Params["scale"]; ok {
+				scale, err := strconv.ParseFloat(scaleStr, 64)
+				if err == nil && scale > 0 {
+					filters = append(filters, fmt.Sprintf("scale=trunc(iw*%.4f):trunc(ih*%.4f)", scale, scale))
+				}
+			} else {
+				w := effect.Params["width"]
+				h := effect.Params["height"]
 
-			if w != "" && h != "" {
-				filters = append(filters, fmt.Sprintf("scale=%s:%s", w, h))
+				if w != "" && h != "" {
+					filters = append(filters, fmt.Sprintf("scale=%s:%s", w, h))
+				}
 			}
 		}
 	}

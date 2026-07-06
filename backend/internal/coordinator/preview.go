@@ -339,6 +339,18 @@ func applyEffect(img image.Image, effectType string, params map[string]string) i
 
 		return applyBrightness(img, factor)
 	case "RESIZE":
+		if scaleStr, ok := params["scale"]; ok {
+			scale, err := strconv.ParseFloat(scaleStr, 64)
+			if err == nil && scale > 0 {
+				bounds := img.Bounds()
+				targetW := int(float64(bounds.Dx()) * scale)
+				targetH := int(float64(bounds.Dy()) * scale)
+				if targetW > 0 && targetH > 0 {
+					return applyResize(img, targetW, targetH)
+				}
+			}
+		}
+
 		w, _ := strconv.Atoi(params["width"])
 
 		h, _ := strconv.Atoi(params["height"])

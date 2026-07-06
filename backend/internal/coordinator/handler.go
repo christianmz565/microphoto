@@ -235,6 +235,10 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 		params["height"] = r.FormValue("height")
 	}
 
+	if r.FormValue("scale") != "" {
+		params["scale"] = r.FormValue("scale")
+	}
+
 	if r.FormValue("effects") != "" {
 		params["effects"] = r.FormValue("effects")
 	}
@@ -346,6 +350,10 @@ func (h *HTTPHandler) ProcessVideo(w http.ResponseWriter, r *http.Request) {
 
 	if r.FormValue("height") != "" {
 		params["height"] = r.FormValue("height")
+	}
+
+	if r.FormValue("scale") != "" {
+		params["scale"] = r.FormValue("scale")
 	}
 
 	if r.FormValue("effects") != "" {

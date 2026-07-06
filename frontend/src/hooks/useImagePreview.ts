@@ -7,6 +7,7 @@ export interface ImageEffects {
   blur: number;
   brightness: number;
   contrast: number;
+  resize: number;
 }
 
 export interface SlideshowMetadata {
@@ -20,6 +21,7 @@ const defaultEffects: ImageEffects = {
   blur: 0,
   brightness: 1,
   contrast: 1,
+  resize: 1,
 };
 
 export function buildEffectsList(effects: ImageEffects): PreviewEffect[] {
@@ -35,6 +37,12 @@ export function buildEffectsList(effects: ImageEffects): PreviewEffect[] {
     list.push({
       type: 'BRIGHTNESS',
       params: { factor: String(effects.brightness) },
+    });
+  }
+  if (effects.resize !== 1) {
+    list.push({
+      type: 'RESIZE',
+      params: { scale: String(effects.resize) },
     });
   }
 

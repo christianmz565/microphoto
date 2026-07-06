@@ -849,23 +849,38 @@ func (p *Processor) applySingleFilter(data []byte, jobType jobs.JobType, params 
 
 		processed, err = ApplyBrightness(data, factor)
 	case jobs.JobType_JOB_TYPE_RESIZE:
-		targetWidth, _ := strconv.Atoi(params["width"])
-		targetHeight, _ := strconv.Atoi(params["height"])
-		originalWidth, _ := strconv.Atoi(params["original_width"])
-		originalHeight, _ := strconv.Atoi(params["original_height"])
-
-		if region != nil && originalHeight > 0 && originalWidth > 0 && targetHeight > 0 && targetWidth > 0 {
-			scaleY := float64(targetHeight) / float64(originalHeight)
-			newFragHeight := int(float64(region.Height) * scaleY)
-
-			scaleX := float64(targetWidth) / float64(originalWidth)
-			newFragWidth := int(float64(region.Width) * scaleX)
-
-			processed, err = ApplyResize(data, newFragWidth, newFragHeight)
-		} else if targetWidth > 0 && targetHeight > 0 {
-			processed, err = ApplyResize(data, targetWidth, targetHeight)
+		if scaleStr, ok := params["scale"]; ok {
+			scale, err := strconv.ParseFloat(scaleStr, 64)
+			if err == nil && scale > 0 && region != nil {
+				newFragWidth := int(float64(region.Width) * scale)
+				newFragHeight := int(float64(region.Height) * scale)
+				if newFragWidth > 0 && newFragHeight > 0 {
+					processed, err = ApplyResize(data, newFragWidth, newFragHeight)
+				} else {
+					processed = data
+				}
+			} else {
+				processed = data
+			}
 		} else {
-			processed = data
+			targetWidth, _ := strconv.Atoi(params["width"])
+			targetHeight, _ := strconv.Atoi(params["height"])
+			originalWidth, _ := strconv.Atoi(params["original_width"])
+			originalHeight, _ := strconv.Atoi(params["original_height"])
+
+			if region != nil && originalHeight > 0 && originalWidth > 0 && targetHeight > 0 && targetWidth > 0 {
+				scaleY := float64(targetHeight) / float64(originalHeight)
+				newFragHeight := int(float64(region.Height) * scaleY)
+
+				scaleX := float64(targetWidth) / float64(originalWidth)
+				newFragWidth := int(float64(region.Width) * scaleX)
+
+				processed, err = ApplyResize(data, newFragWidth, newFragHeight)
+			} else if targetWidth > 0 && targetHeight > 0 {
+				processed, err = ApplyResize(data, targetWidth, targetHeight)
+			} else {
+				processed = data
+			}
 		}
 	default:
 		processed = data

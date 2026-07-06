@@ -3,6 +3,7 @@ import {
   IconBrightness,
   IconFilter,
   IconRefresh,
+  IconResize,
 } from '@tabler/icons-react';
 
 import type { ImageEffects } from '@/hooks/useImagePreview';
@@ -51,6 +52,16 @@ const sliders: SliderConfig[] = [
     icon: IconBrightness,
     min: 0,
     max: 3,
+    step: 0.05,
+    default: 1,
+    unit: 'x',
+  },
+  {
+    key: 'resize',
+    label: 'Escala',
+    icon: IconResize,
+    min: 0.25,
+    max: 4,
     step: 0.05,
     default: 1,
     unit: 'x',
