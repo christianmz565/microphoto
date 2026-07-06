@@ -12,16 +12,10 @@ import { ProgressTracker } from '@/components/ProgressTracker';
 import { ResultPreview } from '@/components/ResultPreview';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useImagePreview } from '@/hooks/useImagePreview';
+import { buildEffectsList, useImagePreview } from '@/hooks/useImagePreview';
 import { useSSE } from '@/hooks/useSSE';
 import { useTaskHistory } from '@/hooks/useTaskHistory';
-import {
-  type FilterType,
-  getResult,
-  previewImage,
-  uploadImage,
-  uploadVideo,
-} from '@/lib/api';
+import { getResult, previewImage, uploadImage, uploadVideo } from '@/lib/api';
 
 interface ImageEditorProps {
   file: File;
@@ -63,25 +57,6 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
     return (
       effects.grayscale > 0 || effects.blur > 0 || effects.brightness !== 1
     );
-  }, [effects]);
-
-  const activeFilter = useMemo(() => {
-    if (effects.grayscale > 0) {
-      return { type: 'GRAYSCALE' as FilterType, params: {} };
-    }
-    if (effects.blur > 0) {
-      return {
-        type: 'BLUR' as FilterType,
-        params: { radius: String(effects.blur) },
-      };
-    }
-    if (effects.brightness !== 1) {
-      return {
-        type: 'BRIGHTNESS' as FilterType,
-        params: { factor: String(effects.brightness) },
-      };
-    }
-    return null;
   }, [effects]);
 
   useEffect(() => {
@@ -150,21 +125,22 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
   }, [file, effects, isVideo, originalUrl]);
 
   const handleProcessDistributed = useCallback(async () => {
-    if (!activeFilter) return;
+    const effectsList = buildEffectsList(effects);
+    if (effectsList.length === 0) return;
     setIsProcessingDistributed(true);
     try {
       let id: string;
       if (isVideo) {
-        id = await uploadVideo(file, activeFilter.type, activeFilter.params);
+        id = await uploadVideo(file, effectsList);
       } else {
-        id = await uploadImage(file, activeFilter.type, activeFilter.params);
+        id = await uploadImage(file, effectsList);
       }
       setTaskID(id);
       setProcessingState('processing');
       addTask({
         taskID: id,
         filename: file.name,
-        filterType: activeFilter.type,
+        filterType: effectsList[0]?.type || 'UNSPECIFIED',
         status: 'processing',
         isVideo,
       });
@@ -174,7 +150,7 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
     } finally {
       setIsProcessingDistributed(false);
     }
-  }, [file, activeFilter, isVideo, addTask]);
+  }, [file, effects, isVideo, addTask]);
 
   if (processingState === 'processing' && taskID) {
     return (

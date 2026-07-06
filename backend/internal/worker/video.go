@@ -127,7 +127,9 @@ func SplitVideoIntoSegments(ctx context.Context, videoPath, outputDir string, se
 
 	pattern := filepath.Join(outputDir, "part_%03d.mp4")
 	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-i", videoPath, "-c", "copy", "-map", "0", "-segment_time", strconv.Itoa(segmentTimeSec), "-f", "segment", pattern)
+
 	var stderr bytes.Buffer
+
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("ffmpeg split: %w: %s", err, stderr.String())

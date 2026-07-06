@@ -1,13 +1,13 @@
 package coordinator
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -46,11 +46,13 @@ func NewHTTPHandler(orch *Orchestrator, m *metrics.Metrics, maxUploadSize int64)
 
 		for range ticker.C {
 			now := time.Now()
+
 			h.previewCache.Range(func(key, value any) bool {
 				cp, ok := value.(cachedPreview)
 				if ok && now.Sub(cp.createdAt) > 30*time.Minute {
 					h.previewCache.Delete(key)
 				}
+
 				return true
 			})
 		}
@@ -194,7 +196,7 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := r.ParseMultipartForm(h.maxUploadSize)
+	err := r.ParseMultipartForm(32 << 20)
 	if err != nil {
 		http.Error(w, "Failed to parse form", http.StatusBadRequest)
 		return
@@ -206,6 +208,11 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+
+	if header.Size > h.maxUploadSize {
+		http.Error(w, "File too large", http.StatusRequestEntityTooLarge)
+		return
+	}
 
 	jobTypeStr := r.FormValue("type")
 
@@ -232,16 +239,32 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 		params["height"] = r.FormValue("height")
 	}
 
-	data, err := io.ReadAll(io.LimitReader(file, h.maxUploadSize+1))
+	if r.FormValue("effects") != "" {
+		params["effects"] = r.FormValue("effects")
+	}
+
+	tmpFile, err := os.CreateTemp("", "upload-img-*.tmp")
 	if err != nil {
-		http.Error(w, "Failed to read image", http.StatusInternalServerError)
+		http.Error(w, "Failed to create temp file", http.StatusInternalServerError)
 		return
 	}
 
-	if int64(len(data)) > h.maxUploadSize {
-		http.Error(w, "File too large", http.StatusRequestEntityTooLarge)
+	tmpPath := tmpFile.Name()
+	defer func() {
+		if tmpFile != nil {
+			tmpFile.Close()
+			os.Remove(tmpPath)
+		}
+	}()
+
+	size, err := io.Copy(tmpFile, file)
+	if err != nil {
+		http.Error(w, "Failed to save upload", http.StatusInternalServerError)
 		return
 	}
+
+	tmpFile.Close()
+	tmpFile = nil
 
 	taskID := uuid.New().String()
 
@@ -257,8 +280,16 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 	h.wg.Go(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
+		defer os.Remove(tmpPath)
 
-		err := h.orchestrator.ProcessImage(ctx, taskID, bytes.NewReader(data), header.Filename, jobType, int64(len(data)), params)
+		f, err := os.Open(tmpPath)
+		if err != nil {
+			log.Printf("Background processing failed for task %s: failed to open temp file: %v", taskID, err)
+			return
+		}
+		defer f.Close()
+
+		err = h.orchestrator.ProcessImage(ctx, taskID, f, header.Filename, jobType, size, params)
 		if err != nil {
 			log.Printf("Background processing failed for task %s: %v", taskID, err)
 			_ = h.orchestrator.redis.PublishProgress(context.Background(), taskID, model.ProgressPayload{
@@ -278,7 +309,7 @@ func (h *HTTPHandler) ProcessVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := r.ParseMultipartForm(h.maxUploadSize)
+	err := r.ParseMultipartForm(32 << 20)
 	if err != nil {
 		http.Error(w, "Failed to parse form", http.StatusBadRequest)
 		return
@@ -290,6 +321,11 @@ func (h *HTTPHandler) ProcessVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+
+	if header.Size > h.maxUploadSize {
+		http.Error(w, "File too large", http.StatusRequestEntityTooLarge)
+		return
+	}
 
 	jobTypeStr := r.FormValue("type")
 
@@ -320,16 +356,32 @@ func (h *HTTPHandler) ProcessVideo(w http.ResponseWriter, r *http.Request) {
 		params["height"] = r.FormValue("height")
 	}
 
-	data, err := io.ReadAll(io.LimitReader(file, h.maxUploadSize+1))
+	if r.FormValue("effects") != "" {
+		params["effects"] = r.FormValue("effects")
+	}
+
+	tmpFile, err := os.CreateTemp("", "upload-vid-*.tmp")
 	if err != nil {
-		http.Error(w, "Failed to read video", http.StatusInternalServerError)
+		http.Error(w, "Failed to create temp file", http.StatusInternalServerError)
 		return
 	}
 
-	if int64(len(data)) > h.maxUploadSize {
-		http.Error(w, "File too large", http.StatusRequestEntityTooLarge)
+	tmpPath := tmpFile.Name()
+	defer func() {
+		if tmpFile != nil {
+			tmpFile.Close()
+			os.Remove(tmpPath)
+		}
+	}()
+
+	size, err := io.Copy(tmpFile, file)
+	if err != nil {
+		http.Error(w, "Failed to save upload", http.StatusInternalServerError)
 		return
 	}
+
+	tmpFile.Close()
+	tmpFile = nil
 
 	taskID := uuid.New().String()
 
@@ -345,8 +397,16 @@ func (h *HTTPHandler) ProcessVideo(w http.ResponseWriter, r *http.Request) {
 	h.wg.Go(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
+		defer os.Remove(tmpPath)
 
-		err := h.orchestrator.ProcessVideo(ctx, taskID, bytes.NewReader(data), header.Filename, jobType, int64(len(data)), params)
+		f, err := os.Open(tmpPath)
+		if err != nil {
+			log.Printf("Background video processing failed for task %s: failed to open temp file: %v", taskID, err)
+			return
+		}
+		defer f.Close()
+
+		err = h.orchestrator.ProcessVideo(ctx, taskID, f, header.Filename, jobType, size, params)
 		if err != nil {
 			log.Printf("Background video processing failed for task %s: %v", taskID, err)
 			_ = h.orchestrator.redis.PublishProgress(context.Background(), taskID, model.ProgressPayload{
