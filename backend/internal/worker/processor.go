@@ -87,6 +87,9 @@ func (p *Processor) HandleJob(ctx context.Context, job *jobs.Job) error {
 		jobs.JobType_JOB_TYPE_GRAYSCALE,
 		jobs.JobType_JOB_TYPE_BLUR,
 		jobs.JobType_JOB_TYPE_BRIGHTNESS,
+		jobs.JobType_JOB_TYPE_CONTRAST,
+		jobs.JobType_JOB_TYPE_SEPIA,
+		jobs.JobType_JOB_TYPE_VIGNETTE,
 		jobs.JobType_JOB_TYPE_UNSPECIFIED:
 		err = p.handleProcess(ctx, job)
 	}

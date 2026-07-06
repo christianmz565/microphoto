@@ -114,26 +114,10 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
         return;
       }
 
-      const HTMLImageElementsList: {
-        type: string;
-        params: Record<string, string>;
-      }[] = [];
-      if (effects.grayscale > 0)
-        HTMLImageElementsList.push({ type: 'GRAYSCALE', params: {} });
-      if (effects.blur > 0)
-        HTMLImageElementsList.push({
-          type: 'BLUR',
-          params: { radius: String(effects.blur) },
-        });
-      if (effects.brightness !== 1)
-        HTMLImageElementsList.push({
-          type: 'BRIGHTNESS',
-          params: { factor: String(effects.brightness) },
-        });
-
+      const effectsList = buildEffectsList(effects);
       const blob =
-        HTMLImageElementsList.length > 0
-          ? await previewImage(file, HTMLImageElementsList)
+        effectsList.length > 0
+          ? await previewImage(file, effectsList)
           : file;
 
       const url = URL.createObjectURL(blob);
@@ -162,7 +146,6 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
         id = await uploadImage(file, effectsList, onProgress);
       }
       setTaskID(id);
-      setProcessingState('editing'); // Note: previously set to processing, wait, let's keep 'processing' as in step 4
       setProcessingState('processing');
       addTask({
         taskID: id,
@@ -192,7 +175,10 @@ export function ImageEditor({ file, onBack }: ImageEditorProps) {
           size="sm"
           onClick={() => {
             setTaskID(null);
+            setResultBlob(null);
             setProcessingState('editing');
+            setUploadProgress(null);
+            setIsProcessingDistributed(false);
           }}
           className="mx-auto text-zinc-500 hover:text-zinc-300"
         >
