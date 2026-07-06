@@ -119,17 +119,9 @@ func (h *HTTPHandler) PreviewImage(w http.ResponseWriter, r *http.Request) {
 
 			cutData, err = cutVideoPreviewFile(r.Context(), tmpInputPath, 2)
 			if err != nil {
-				log.Printf("Failed to cut preview video: %v, falling back to original", err)
-
-				_, _ = file.Seek(0, io.SeekStart)
-
-				data, readErr := io.ReadAll(file)
-				if readErr != nil {
-					http.Error(w, "Failed to read file", http.StatusInternalServerError)
-					return
-				}
-
-				cutData = data
+				log.Printf("Failed to cut preview video: %v", err)
+				http.Error(w, "Failed to generate video preview", http.StatusInternalServerError)
+				return
 			}
 
 			previewID = "preview-vid-" + uuid.New().String()
