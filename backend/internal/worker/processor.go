@@ -763,8 +763,15 @@ func (p *Processor) ProcessVideoSegment(ctx context.Context, job *jobs.Job, inpu
 	_ = width
 	_ = height
 
+	workerConcurrency := 8
+	if envVal := os.Getenv("WORKER_CONCURRENCY"); envVal != "" {
+		if val, err := strconv.Atoi(envVal); err == nil && val > 0 {
+			workerConcurrency = val
+		}
+	}
+
 	g, gCtx := errgroup.WithContext(ctx)
-	g.SetLimit(8)
+	g.SetLimit(workerConcurrency)
 
 	for _, frame := range frames {
 		g.Go(func() error {
