@@ -239,6 +239,10 @@ func (h *HTTPHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 		params["scale"] = r.FormValue("scale")
 	}
 
+	if r.FormValue("intensity") != "" {
+		params["intensity"] = r.FormValue("intensity")
+	}
+
 	if r.FormValue("effects") != "" {
 		params["effects"] = r.FormValue("effects")
 	}
@@ -356,6 +360,10 @@ func (h *HTTPHandler) ProcessVideo(w http.ResponseWriter, r *http.Request) {
 		params["scale"] = r.FormValue("scale")
 	}
 
+	if r.FormValue("intensity") != "" {
+		params["intensity"] = r.FormValue("intensity")
+	}
+
 	if r.FormValue("effects") != "" {
 		params["effects"] = r.FormValue("effects")
 	}
@@ -432,6 +440,12 @@ func parseJobType(s string) jobs.JobType {
 		return jobs.JobType_JOB_TYPE_BRIGHTNESS
 	case "RECONSTRUCT":
 		return jobs.JobType_JOB_TYPE_RECONSTRUCT
+	case "CONTRAST":
+		return jobs.JobType_JOB_TYPE_CONTRAST
+	case "SEPIA":
+		return jobs.JobType_JOB_TYPE_SEPIA
+	case "VIGNETTE":
+		return jobs.JobType_JOB_TYPE_VIGNETTE
 	default:
 		return jobs.JobType_JOB_TYPE_UNSPECIFIED
 	}

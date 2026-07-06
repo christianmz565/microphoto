@@ -70,6 +70,42 @@ func buildFFmpegFilterChain(effectsJSON string) (string, error) {
 					filters = append(filters, fmt.Sprintf("scale=%s:%s", w, h))
 				}
 			}
+		case "CONTRAST":
+			factor := 1.0
+			if f, err := strconv.ParseFloat(effect.Params["factor"], 64); err == nil {
+				factor = f
+			}
+
+			filters = append(filters, fmt.Sprintf("eq=contrast=%.4f", factor))
+		case "SEPIA":
+			intensity := 1.0
+			if f, err := strconv.ParseFloat(effect.Params["intensity"], 64); err == nil {
+				intensity = f
+			}
+
+			// colorchannelmixer takes a 4x4 matrix: R_out, G_out, B_out, A_out
+			// Identity: 1 0 0 0 | 0 1 0 0 | 0 0 1 0 | 0 0 0 1
+			// Sepia:    0.393 0.769 0.189 0 | 0.349 0.686 0.168 0 | 0.272 0.534 0.131 0 | 0 0 0 1
+			// Interpolate each coefficient toward identity as intensity → 0
+			ri := 1*(1-intensity) + 0.393*intensity
+			gi := 0*(1-intensity) + 0.769*intensity
+			bi := 0*(1-intensity) + 0.189*intensity
+			rr := 0*(1-intensity) + 0.349*intensity
+			gr := 1*(1-intensity) + 0.686*intensity
+			br := 0*(1-intensity) + 0.168*intensity
+			rb := 0*(1-intensity) + 0.272*intensity
+			gb := 0*(1-intensity) + 0.534*intensity
+			bb := 1*(1-intensity) + 0.131*intensity
+			filters = append(filters, fmt.Sprintf(
+				"colorchannelmixer=%.4f:%.4f:%.4f:0:%.4f:%.4f:%.4f:0:%.4f:%.4f:%.4f:0:0:0:0:1",
+				ri, gi, bi, rr, gr, br, rb, gb, bb))
+		case "VIGNETTE":
+			intensity := 1.0
+			if f, err := strconv.ParseFloat(effect.Params["intensity"], 64); err == nil {
+				intensity = f
+			}
+
+			filters = append(filters, fmt.Sprintf("vignette=PI/%.4f", 4.0/intensity))
 		}
 	}
 

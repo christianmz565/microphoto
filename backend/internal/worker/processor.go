@@ -812,6 +812,12 @@ func (p *Processor) applyEffectsPipeline(data []byte, job *jobs.Job) ([]byte, er
 			jobType = jobs.JobType_JOB_TYPE_BRIGHTNESS
 		case "RESIZE":
 			jobType = jobs.JobType_JOB_TYPE_RESIZE
+		case "CONTRAST":
+			jobType = jobs.JobType_JOB_TYPE_CONTRAST
+		case "SEPIA":
+			jobType = jobs.JobType_JOB_TYPE_SEPIA
+		case "VIGNETTE":
+			jobType = jobs.JobType_JOB_TYPE_VIGNETTE
 		default:
 			jobType = jobs.JobType_JOB_TYPE_UNSPECIFIED
 		}
@@ -882,6 +888,22 @@ func (p *Processor) applySingleFilter(data []byte, jobType jobs.JobType, params 
 				processed = data
 			}
 		}
+	case jobs.JobType_JOB_TYPE_CONTRAST:
+		factor := 1.0
+		if f, err := strconv.ParseFloat(params["factor"], 64); err == nil {
+			factor = f
+		}
+
+		processed, err = ApplyContrast(data, factor)
+	case jobs.JobType_JOB_TYPE_SEPIA:
+		intensity := 1.0
+		if f, err := strconv.ParseFloat(params["intensity"], 64); err == nil {
+			intensity = f
+		}
+
+		processed, err = ApplySepia(data, intensity)
+	case jobs.JobType_JOB_TYPE_VIGNETTE:
+		processed, err = ApplyVignette(data, 0)
 	default:
 		processed = data
 	}

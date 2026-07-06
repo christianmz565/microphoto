@@ -359,6 +359,27 @@ func applyEffect(img image.Image, effectType string, params map[string]string) i
 		}
 
 		return img
+	case "CONTRAST":
+		factor := 1.0
+		if v, err := strconv.ParseFloat(params["factor"], 64); err == nil {
+			factor = v
+		}
+
+		return applyContrast(img, factor)
+	case "SEPIA":
+		intensity := 1.0
+		if v, err := strconv.ParseFloat(params["intensity"], 64); err == nil {
+			intensity = v
+		}
+
+		return applySepia(img, intensity)
+	case "VIGNETTE":
+		intensity := 1.0
+		if v, err := strconv.ParseFloat(params["intensity"], 64); err == nil {
+			intensity = v
+		}
+
+		return applyVignette(img, intensity)
 	default:
 		return img
 	}
@@ -475,6 +496,89 @@ func applyResize(img image.Image, targetW, targetH int) image.Image {
 				G: c.G,
 				B: c.B,
 				A: c.A,
+			})
+		}
+	}
+
+	return result
+}
+
+func applyContrast(img image.Image, factor float64) image.Image {
+	bounds := img.Bounds()
+
+	result := image.NewRGBA(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			rr := (float64(r>>8) - 128) * factor + 128
+			gg := (float64(g>>8) - 128) * factor + 128
+			bb := (float64(b>>8) - 128) * factor + 128
+			result.SetRGBA(x, y, color.RGBA{
+				R: clamp(rr),
+				G: clamp(gg),
+				B: clamp(bb),
+				A: uint8(a >> 8),
+			})
+		}
+	}
+
+	return result
+}
+
+func applySepia(img image.Image, intensity float64) image.Image {
+	bounds := img.Bounds()
+
+	result := image.NewRGBA(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			rr := float64(r >> 8)
+			gg := float64(g >> 8)
+			bb := float64(b >> 8)
+
+			sr := rr*0.393 + gg*0.769 + bb*0.189
+			sg := rr*0.349 + gg*0.686 + bb*0.168
+			sb := rr*0.272 + gg*0.534 + bb*0.131
+
+			result.SetRGBA(x, y, color.RGBA{
+				R: clamp(rr*(1-intensity) + sr*intensity),
+				G: clamp(gg*(1-intensity) + sg*intensity),
+				B: clamp(bb*(1-intensity) + sb*intensity),
+				A: uint8(a >> 8),
+			})
+		}
+	}
+
+	return result
+}
+
+func applyVignette(img image.Image, intensity float64) image.Image {
+	bounds := img.Bounds()
+	w := bounds.Dx()
+	h := bounds.Dy()
+
+	result := image.NewRGBA(bounds)
+	cx := float64(w) / 2
+	cy := float64(h) / 2
+	maxDist := math.Sqrt(cx*cx + cy*cy)
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			dx := float64(x-bounds.Min.X) - cx
+			dy := float64(y-bounds.Min.Y) - cy
+			dist := math.Sqrt(dx*dx+dy*dy) / maxDist
+
+			darken := 1.0 - dist*intensity
+			if darken < 0 {
+				darken = 0
+			}
+
+			result.SetRGBA(x, y, color.RGBA{
+				R: clamp(float64(r>>8) * darken),
+				G: clamp(float64(g>>8) * darken),
+				B: clamp(float64(b>>8) * darken),
+				A: uint8(a >> 8),
 			})
 		}
 	}

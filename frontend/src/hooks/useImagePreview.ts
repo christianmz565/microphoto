@@ -8,6 +8,8 @@ export interface ImageEffects {
   brightness: number;
   contrast: number;
   resize: number;
+  sepia: number;
+  vignette: number;
 }
 
 export interface SlideshowMetadata {
@@ -22,6 +24,8 @@ const defaultEffects: ImageEffects = {
   brightness: 1,
   contrast: 1,
   resize: 1,
+  sepia: 0,
+  vignette: 0,
 };
 
 export function buildEffectsList(effects: ImageEffects): PreviewEffect[] {
@@ -39,10 +43,28 @@ export function buildEffectsList(effects: ImageEffects): PreviewEffect[] {
       params: { factor: String(effects.brightness) },
     });
   }
+  if (effects.contrast !== 1) {
+    list.push({
+      type: 'CONTRAST',
+      params: { factor: String(effects.contrast) },
+    });
+  }
   if (effects.resize !== 1) {
     list.push({
       type: 'RESIZE',
       params: { scale: String(effects.resize) },
+    });
+  }
+  if (effects.sepia > 0) {
+    list.push({
+      type: 'SEPIA',
+      params: { intensity: String(effects.sepia) },
+    });
+  }
+  if (effects.vignette > 0) {
+    list.push({
+      type: 'VIGNETTE',
+      params: { intensity: String(effects.vignette) },
     });
   }
 

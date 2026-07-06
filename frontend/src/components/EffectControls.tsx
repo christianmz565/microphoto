@@ -4,6 +4,7 @@ import {
   IconFilter,
   IconRefresh,
   IconResize,
+  IconSun,
 } from '@tabler/icons-react';
 
 import type { ImageEffects } from '@/hooks/useImagePreview';
@@ -57,6 +58,16 @@ const sliders: SliderConfig[] = [
     unit: 'x',
   },
   {
+    key: 'contrast',
+    label: 'Contraste',
+    icon: IconSun,
+    min: 0.5,
+    max: 3,
+    step: 0.05,
+    default: 1,
+    unit: 'x',
+  },
+  {
     key: 'resize',
     label: 'Escala',
     icon: IconResize,
@@ -65,6 +76,26 @@ const sliders: SliderConfig[] = [
     step: 0.05,
     default: 1,
     unit: 'x',
+  },
+  {
+    key: 'sepia',
+    label: 'Sepia',
+    icon: IconSun,
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 0,
+    unit: '%',
+  },
+  {
+    key: 'vignette',
+    label: 'Viñeta',
+    icon: IconSun,
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 0,
+    unit: '%',
   },
 ];
 
