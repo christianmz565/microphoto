@@ -1,7 +1,6 @@
 import { Slide } from "@revealjs/react";
 import { Badge } from "@/shared/badge";
 import { colors as C } from "@/shared/colors";
-import { DotList } from "@/shared/dot-list";
 import {
   FeatureCard,
   FeatureCardCompact,
@@ -17,16 +16,75 @@ import { ThanksSlide } from "@/shared/thanks-slide";
 const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const LOGO = `${baseUrl}/microphoto/logo.png`;
-const IMG_ARCH = `${baseUrl}/microphoto/arquitectura-general.png`;
 const IMG_SEQ_1 = `${baseUrl}/microphoto/diagrama-secuencia-parte-1.png`;
 const IMG_SEQ_2 = `${baseUrl}/microphoto/diagrama-secuencia-parte-2.png`;
 const IMG_EV_LANDING = `${baseUrl}/microphoto/ev-pagina-principal.png`;
-const IMG_EV_CONFIG = `${baseUrl}/microphoto/ev-configuracion-antes-de-enviar-tarea.png`;
-const IMG_EV_PROGRESS = `${baseUrl}/microphoto/ev-procesamiento-de-imagen-en-progreso.png`;
-const IMG_EV_DETAIL = `${baseUrl}/microphoto/ev-procesamiento-en-progreso-con-detalle-por-nodo.png`;
-const IMG_EV_RESULT = `${baseUrl}/microphoto/ev-resultado-final.png`;
+const IMG_ARCHITECTURE = `${baseUrl}/microphoto/diagrama-arquitectura.png`;
 
-/* ─── PORTADA ─── */
+/* ─── PLACEHOLDER PARA CAPTURAS PENDIENTES ─── */
+function ImagePlaceholder({ label }: { label: string }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 text-center"
+      style={{ borderColor: `${C.petrol}50`, background: `${C.petrol}0a` }}
+    >
+      <svg
+        role="img"
+        aria-label="Espacio para captura de pantalla"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={C.petrol}
+        strokeWidth="1.5"
+        className="size-10 opacity-70"
+      >
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+        <circle cx="8.5" cy="8.5" r="1.5" />
+        <polyline points="21 15 16 10 5 21" />
+      </svg>
+      <p
+        className="text-lg font-semibold uppercase tracking-[0.15em]"
+        style={{ color: C.petrol }}
+      >
+        Espacio para captura
+      </p>
+      <p className="text-lg text-gray-400 max-w-md text-pretty">{label}</p>
+    </div>
+  );
+}
+
+/* ─── TARJETA DE REQUERIMIENTO ─── */
+function statusColor(status: "Completo" | "En curso" | "Pendiente") {
+  if (status === "Completo") return C.green;
+  if (status === "En curso") return C.amber;
+  return C.red;
+}
+
+function RequirementCard({
+  code,
+  desc,
+  status,
+}: {
+  code: string;
+  desc: string;
+  status: "Completo" | "En curso" | "Pendiente";
+}) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 p-3 flex flex-col gap-1.5 text-left">
+      <div className="flex items-center justify-between">
+        <Badge label={code} color={C.petrol} />
+        <span
+          className="text-sm font-semibold uppercase tracking-wider"
+          style={{ color: statusColor(status) }}
+        >
+          {status}
+        </span>
+      </div>
+      <p className="text-lg text-gray-300 leading-snug">{desc}</p>
+    </div>
+  );
+}
+
+/* ─── PORTADA + INTEGRANTES ─── */
 function Cover() {
   return (
     <Slide className="h-full">
@@ -41,7 +99,7 @@ function Cover() {
           <span style={{ color: C.petrol }}>Microphoto</span>
         </h1>
         <p className="mt-2 text-2xl text-gray-400 max-w-3xl text-pretty">
-          Procesamiento paralelo de imágenes sobre una arquitectura de
+          Procesamiento paralelo de imágenes y video sobre una arquitectura de
           sistemas distribuidos
         </p>
         <div className="mt-6">
@@ -59,13 +117,13 @@ function Cover() {
   );
 }
 
-/* ─── INTRODUCCIÓN ─── */
-function Introduction() {
+/* ─── MOTIVACIÓN ─── */
+function Motivation() {
   return (
     <Slide className="h-full">
       <SlideWrap
         color={C.petrol}
-        tag="Introducción"
+        tag="¿Por qué?"
         variant="decorated"
         className="justify-center flex flex-col gap-6 w-full mx-auto"
       >
@@ -75,8 +133,8 @@ function Introduction() {
             <span style={{ color: C.petrol }}>procesamiento distribuido</span>
           </h1>
           <p className="mt-2 text-xl text-gray-400 max-w-3xl text-center text-pretty">
-            Microphoto fragmenta, procesa en paralelo y reconstruye imágenes
-            de gran tamaño, distribuyendo el trabajo entre múltiples nodos
+            Microphoto fragmenta, procesa en paralelo y reconstruye imágenes y
+            video de gran tamaño, distribuyendo el trabajo entre múltiples nodos
             worker.
           </p>
         </div>
@@ -85,7 +143,7 @@ function Introduction() {
           {[
             {
               l: "Pipeline distribuido",
-              d: "Fragmentación automática, distribución entre workers y reconstrucción de la imagen final.",
+              d: "Fragmentación automática, distribución entre workers y reconstrucción del resultado final.",
             },
             {
               l: "Feedback en tiempo real",
@@ -106,11 +164,16 @@ function Introduction() {
           ))}
         </div>
 
-        <div className="flex items-center justify-center gap-3">
+        <div className="flex flex-wrap items-center justify-center gap-3">
           <span className="text-xl font-semibold uppercase tracking-[0.15em] text-gray-500">
-            Filtros disponibles
+            Capacidades actuales
           </span>
-          {["GRAYSCALE", "BLUR", "BRIGHTNESS", "RESIZE"].map((f) => (
+          {[
+            "Imágenes",
+            "Video",
+            "Vista previa en vivo",
+            "Efectos encadenados",
+          ].map((f) => (
             <Badge key={f} label={f} color={C.petrol} />
           ))}
         </div>
@@ -119,158 +182,157 @@ function Introduction() {
   );
 }
 
-/* ─── EQUIPO Y ROLES ─── */
-function Team() {
+/* ─── REQUERIMIENTOS: DIVISOR ─── */
+function RequirementsDivider() {
   return (
     <Slide className="h-full">
       <SlideWrap
         color={C.petrol}
-        tag="Equipo y Roles"
+        tag="Requerimientos"
         variant="decorated"
-        className="w-full flex flex-col gap-3 justify-center items-center"
+        className="justify-center items-center flex flex-col gap-4"
       >
-        <h1 className="text-5xl! font-semibold tracking-tight">
-          Organización del{" "}
-          <span style={{ color: C.petrol }}>equipo de trabajo</span>
+        <h1 className="text-6xl! font-semibold tracking-tight text-center">
+          Funcionales <span className="text-gray-500 font-light">y</span>{" "}
+          <span style={{ color: C.petrol }}>No Funcionales</span>
         </h1>
-        <div className="grid grid-cols-3 gap-3 self-stretch">
-          {[
-            {
-              l: "Backend",
-              d: "Bedregal Pérez, Daniel · Mestas Zegarra, Christian Raúl · Noa Camino, Yenaro Joel — coordinador HTTP, procesamiento con bimg/libvips, slicing, reconstitución y reaper.",
-            },
-            {
-              l: "Frontend",
-              d: "Jara Mamani, Mariel Alisson — aplicación con Astro y React, integración SSE y componentes UI con shadcn/ui.",
-            },
-            {
-              l: "Infraestructura",
-              d: "Sequeiros Condori, Luis Gustavo — Docker Compose, manifiestos Kubernetes, Helm charts, Helmfile y secretos con SOPS.",
-            },
-          ].map((i) => (
-            <FeatureCardCompact
-              key={i.l}
-              label={i.l}
-              description={i.d}
-              color={C.petrol}
-              variant="decorated"
-            />
-          ))}
-        </div>
+        <p className="text-xl text-gray-400 max-w-2xl text-center text-pretty">
+          Verificados directamente sobre el estado actual del código del backend
+          y el frontend.
+        </p>
       </SlideWrap>
     </Slide>
   );
 }
 
-/* ─── ESTADO GENERAL ─── */
-function ProjectStatus() {
-  return (
-    <Slide className="h-full">
-      <SlideWrap
-        color={C.petrol}
-        tag="Estado General del Proyecto"
-        variant="decorated"
-        className="w-full flex flex-col gap-3 justify-center"
-      >
-        <h1 className="text-5xl! font-semibold tracking-tight text-center">
-          Avance al{" "}
-          <span style={{ color: C.petrol }}>24 de junio de 2026</span>
-        </h1>
-        <div className="grid grid-cols-4 gap-3">
-          {[
-            { v: "50%", l: "Avance general del proyecto" },
-            { v: "3/3", l: "Servicios backend operativos" },
-            { v: "5/5", l: "Vistas frontend con SSE" },
-            { v: "13/15", l: "Requerimientos funcionales completos" },
-          ].map((i) => (
-            <StatCard
-              key={i.l}
-              value={i.v}
-              label={i.l}
-              color={C.petrol}
-              variant="decorated"
-            />
-          ))}
-        </div>
-        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-          <p className="text-lg font-semibold uppercase tracking-[0.15em] text-gray-500 mb-1">
-            Pendiente para el cierre
-          </p>
-          <DotList
-            items={[
-              "Autenticación y gestión de usuarios",
-              "Historial persistente de tareas en base de datos",
-              "Pruebas automatizadas unitarias e integración",
-              "Validación del despliegue en un clúster Kubernetes real",
-            ]}
-            color={C.petrol}
-          />
-        </div>
-      </SlideWrap>
-    </Slide>
-  );
-}
-
-/* ─── BACKLOG: ÉPICAS ─── */
-function Backlog() {
-  const epics = [
+/* ─── REQUERIMIENTOS FUNCIONALES ─── */
+function FunctionalRequirements() {
+  const items: {
+    code: string;
+    desc: string;
+    status: "Completo" | "En curso" | "Pendiente";
+  }[] = [
     {
-      code: "E-001",
-      l: "Pipeline de procesamiento distribuido",
-      v: "100%",
-      c: C.green,
+      code: "RF-001",
+      desc: "Subida de imágenes y video desde el navegador (hasta 2 GB).",
+      status: "Completo",
     },
     {
-      code: "E-002",
-      l: "Interfaz de usuario y experiencia de cliente",
-      v: "100%",
-      c: C.green,
+      code: "RF-002",
+      desc: "Fragmentación por píxeles (imagen) o segmentación por tiempo (video).",
+      status: "Completo",
     },
     {
-      code: "E-003",
-      l: "Observabilidad y monitoreo",
-      v: "33%",
-      c: C.amber,
+      code: "RF-003",
+      desc: "Procesamiento paralelo en workers con efectos encadenables.",
+      status: "Completo",
     },
     {
-      code: "E-004",
-      l: "Infraestructura y despliegue",
-      v: "50%",
-      c: C.amber,
+      code: "RF-004",
+      desc: "Vista previa en vivo de los efectos sin pasar por el clúster.",
+      status: "Completo",
     },
     {
-      code: "E-005",
-      l: "Gestión de usuarios y seguridad",
-      v: "0%",
-      c: C.red,
+      code: "RF-005",
+      desc: "Reconstrucción y reensamblado automático del resultado final.",
+      status: "Completo",
+    },
+    {
+      code: "RF-006",
+      desc: "Progreso en tiempo real vía SSE, con detalle por worker.",
+      status: "Completo",
+    },
+    {
+      code: "RF-007",
+      desc: "Historial local de tareas recientes en el navegador.",
+      status: "Completo",
+    },
+    {
+      code: "RF-008",
+      desc: "Historial de tareas persistente en base de datos (hoy solo en localStorage).",
+      status: "Completo",
     },
   ];
   return (
     <Slide className="h-full">
       <SlideWrap
         color={C.petrol}
-        tag="Backlog · Resumen de Épicas"
+        tag="Requerimientos Funcionales"
         variant="decorated"
-        className="w-full flex flex-col gap-4 justify-center"
+        className="w-full flex flex-col gap-3 justify-center"
       >
-        <h1 className="text-5xl! font-semibold tracking-tight text-center">
-          Avance por{" "}
-          <span style={{ color: C.petrol }}>épica</span>
+        <h1 className="text-4xl! font-semibold tracking-tight text-center">
+          Qué puede hacer <span style={{ color: C.petrol }}>hoy</span> la
+          plataforma
         </h1>
-        <div className="grid grid-cols-5 gap-3">
-          {epics.map((e) => (
-            <div
-              key={e.code}
-              className="rounded-xl border border-white/10 bg-white/5 p-3 flex flex-col items-center text-center"
-            >
-              <Badge label={e.code} color={C.petrol} />
-              <p className="mt-3 text-6xl font-bold" style={{ color: e.c }}>
-                {e.v}
-              </p>
-              <p className="mt-2 text-lg text-gray-400 leading-snug">
-                {e.l}
-              </p>
-            </div>
+        <div className="grid grid-cols-3 gap-2.5">
+          {items.map((i) => (
+            <RequirementCard key={i.code} {...i} />
+          ))}
+        </div>
+      </SlideWrap>
+    </Slide>
+  );
+}
+
+/* ─── REQUERIMIENTOS NO FUNCIONALES ─── */
+function NonFunctionalRequirements() {
+  const items: {
+    code: string;
+    desc: string;
+    status: "Completo" | "En curso" | "Pendiente";
+  }[] = [
+    {
+      code: "RNF-001",
+      desc: "Escalabilidad horizontal: workers replicables sin cambiar código.",
+      status: "Completo",
+    },
+    {
+      code: "RNF-002",
+      desc: "Tolerancia a fallos: reaper con reintentos (máx. 3) y colas atómicas.",
+      status: "Completo",
+    },
+    {
+      code: "RNF-003",
+      desc: "Contenerización multi-stage con Docker para los tres servicios.",
+      status: "Completo",
+    },
+    {
+      code: "RNF-004",
+      desc: "Vista previa en menos de 2 segundos de respuesta.",
+      status: "Completo",
+    },
+    {
+      code: "RNF-005",
+      desc: "Observabilidad: métricas OpenTelemetry/Prometheus por servicio.",
+      status: "Completo",
+    },
+    {
+      code: "RNF-006",
+      desc: "Despliegue en Kubernetes con Helm charts y Helmfile.",
+      status: "Completo",
+    },
+    {
+      code: "RNF-007",
+      desc: "Gestión de secretos cifrados con SOPS.",
+      status: "Completo",
+    },
+  ];
+  return (
+    <Slide className="h-full">
+      <SlideWrap
+        color={C.petrol}
+        tag="Requerimientos No Funcionales"
+        variant="decorated"
+        className="w-full flex flex-col gap-3 justify-center"
+      >
+        <h1 className="text-4xl! font-semibold tracking-tight text-center">
+          Cómo se comporta{" "}
+          <span style={{ color: C.petrol }}>bajo carga y fallos</span>
+        </h1>
+        <div className="grid grid-cols-4 gap-2.5">
+          {items.map((i) => (
+            <RequirementCard key={i.code} {...i} />
           ))}
         </div>
       </SlideWrap>
@@ -301,12 +363,7 @@ function Architecture() {
             Prometheus.
           </p>
         </div>
-        <img
-          src={IMG_ARCH}
-          alt="Arquitectura global de Microphoto"
-          className="object-contain rounded-xl bg-white/95 p-3 shadow-md max-h-72"
-        />
-        <div className="grid grid-cols-4 gap-2 self-stretch">
+        <div className="grid grid-cols-2 gap-2 self-stretch">
           {[
             {
               l: "Cola fiable BLMOVE",
@@ -322,7 +379,7 @@ function Architecture() {
             },
             {
               l: "SetNX de reconstrucción",
-              d: "Un único worker dispara la reconstitución final de la imagen.",
+              d: "Un único worker dispara la reconstitución final del resultado.",
             },
           ].map((i) => (
             <FeatureCardCompactSmall
@@ -338,26 +395,47 @@ function Architecture() {
   );
 }
 
-/* ─── CICLO DE VIDA: SECUENCIA ─── */
+function ImgArchitecture() {
+  return (
+    <Slide className="h-full">
+      <SlideWrap
+        color={C.petrol}
+        tag="Arquitectura · Visión Global"
+        variant="decorated"
+        className="w-full h-full flex items-center justify-center"
+      >
+        <div className="flex flex-col items-center">
+          <img
+            src={IMG_ARCHITECTURE}
+            alt="Diagrama de arquitectura global: coordinador, workers, reaper, Redis, MinIO y Traefik"
+            className="object-contain rounded-xl bg-white/95 p-2 shadow-md w-md"
+          />
+        </div>
+      </SlideWrap>
+    </Slide>
+  );
+}
+
+/* ─── CICLO DE VIDA: SECUENCIA (IMAGEN) ─── */
 function SequencePart1() {
   return (
     <Slide className="h-full">
       <SlideWrap
         color={C.petrol}
-        tag="Ciclo de Vida · Secuencia 1/2"
+        tag="Ciclo de Vida (Imagen) · Secuencia 1/2"
         variant="decorated"
         className="w-full flex items-center justify-center"
       >
-        <div className="grid grid-cols-2 gap-4 w-full items-center text-left">
+        <div className="grid grid-cols-2 gap-4 w-full items-center text-left px-2">
           <div className="flex items-center justify-center p-2">
             <img
               src={IMG_SEQ_1}
               alt="Diagrama de secuencia: subida, suscripción y corte"
-              className="object-contain rounded-xl bg-white/95 p-2 shadow-md max-h-[560px]"
+              className="object-contain rounded-xl bg-white/95 p-2 shadow-md w-xl"
             />
           </div>
-          <div className="flex flex-col gap-2">
-            <h1 className="text-4xl! font-semibold tracking-tight">
+          <div className="flex flex-col gap-4">
+            <h1 className="text-3xl! font-semibold tracking-tight">
               Subida,{" "}
               <span style={{ color: C.petrol }}>suscripción y corte</span>
             </h1>
@@ -391,20 +469,20 @@ function SequencePart2() {
     <Slide className="h-full">
       <SlideWrap
         color={C.petrol}
-        tag="Ciclo de Vida · Secuencia 2/2"
+        tag="Ciclo de Vida (Imagen) · Secuencia 2/2"
         variant="decorated"
         className="w-full flex items-center justify-center"
       >
         <div className="grid grid-cols-2 gap-4 w-full items-center text-left">
-          <div className="flex flex-col gap-2">
-            <h1 className="text-4xl! font-semibold tracking-tight">
+          <div className="flex flex-col gap-4">
+            <h1 className="text-3xl! font-semibold tracking-tight">
               Procesamiento,{" "}
               <span style={{ color: C.petrol }}>reconstrucción y entrega</span>
             </h1>
             <NumberedItem
               num="4"
               title="Procesamiento paralelo"
-              description="Cada worker toma un fragmento, aplica el filtro configurado y reporta su progreso, que se emite al coordinador."
+              description="Cada worker toma un fragmento, aplica los efectos configurados y reporta su progreso, que se emite al coordinador."
               color={C.petrol}
             />
             <NumberedItem
@@ -424,9 +502,61 @@ function SequencePart2() {
             <img
               src={IMG_SEQ_2}
               alt="Diagrama de secuencia: procesamiento, reconstrucción y descarga"
-              className="object-contain rounded-xl bg-white/95 p-2 shadow-md max-h-[560px]"
+              className="object-contain rounded-xl bg-white/95 p-2 shadow-md w-xl"
             />
           </div>
+        </div>
+      </SlideWrap>
+    </Slide>
+  );
+}
+
+/* ─── PIPELINE DE VIDEO (NUEVO) ─── */
+function VideoPipeline() {
+  return (
+    <Slide className="h-full">
+      <SlideWrap
+        color={C.petrol}
+        tag="Pipeline de Video · Novedad"
+        variant="decorated"
+        className="w-full flex flex-col gap-3 justify-center items-center"
+      >
+        <div className="flex flex-col items-center">
+          <h1 className="text-5xl! text-balance text-center">
+            Dos niveles de <span style={{ color: C.petrol }}>paralelismo</span>
+          </h1>
+          <p className="mt-1 text-xl text-gray-400 text-pretty text-center max-w-4xl">
+            El video no se corta por píxeles como la imagen: se segmenta por
+            tiempo y luego se paraleliza por frame dentro de cada segmento.
+          </p>
+        </div>
+        <div className="grid grid-cols-4 gap-2.5 self-stretch">
+          {[
+            {
+              l: "Segmentación temporal",
+              d: "ffmpeg divide el video en segmentos de 3s por defecto, subidos y encolados en paralelo.",
+            },
+            {
+              l: "Extracción de frames",
+              d: "Cada segmento se descompone en frames JPEG (ffmpeg -q:v 2).",
+            },
+            {
+              l: "Filtrado paralelo",
+              d: "El mismo pipeline de efectos de imagen se aplica a cada frame, con concurrencia configurable (8 por defecto).",
+            },
+            {
+              l: "Reensamblado",
+              d: "Los frames se recomponen en MP4 (libx264) y los segmentos se concatenan en el resultado final.",
+            },
+          ].map((i) => (
+            <FeatureCardCompact
+              key={i.l}
+              label={i.l}
+              description={i.d}
+              color={C.petrol}
+              variant="decorated"
+            />
+          ))}
         </div>
       </SlideWrap>
     </Slide>
@@ -444,26 +574,21 @@ function Backend() {
         className="w-full flex flex-col gap-3 justify-center"
       >
         <h1 className="text-5xl! font-semibold tracking-tight text-center">
-          Tres servicios en{" "}
-          <span style={{ color: C.petrol }}>Go</span>
+          Tres servicios en <span style={{ color: C.petrol }}>Go</span>
         </h1>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           {[
             {
               l: "Coordinador",
-              d: "Recibe las solicitudes HTTP, sube la imagen original a MinIO, encola las subtareas y transmite progreso vía SSE.",
+              d: "Recibe subidas de imagen y video, expone la vista previa en vivo y transmite el progreso vía SSE.",
             },
             {
               l: "Worker",
-              d: "Consume tareas de Redis, segmenta en fragmentos de un millón de píxeles y aplica filtros con bimg y libvips.",
+              d: "Consume tareas de Redis; fragmenta imágenes por píxeles o segmenta video por tiempo, y aplica efectos encadenados con bimg/libvips y ffmpeg.",
             },
             {
               l: "Reaper",
-              d: "Monitorea tareas en proceso, detecta expiraciones y reintenta o marca fallo definitivo tras agotar los intentos.",
-            },
-            {
-              l: "Clientes y Utilidades",
-              d: "Wrappers de conexión a Redis y MinIO, políticas de expiración y telemetría para Prometheus.",
+              d: "Detecta tareas colgadas cada 5s; reagenda hasta 3 intentos por tarea o marca fallo definitivo.",
             },
           ].map((i) => (
             <FeatureCardCompact
@@ -480,7 +605,7 @@ function Backend() {
   );
 }
 
-/* ─── FRONTEND ─── */
+/* ─── FRONTEND: EDITOR DE EFECTOS ─── */
 function Frontend() {
   return (
     <Slide className="h-full">
@@ -491,81 +616,115 @@ function Frontend() {
         className="w-full flex flex-col gap-3 justify-center"
       >
         <h1 className="text-5xl! font-semibold tracking-tight text-center">
-          Cliente web con{" "}
-          <span style={{ color: C.petrol }}>Astro y React</span>
+          Editor con <span style={{ color: C.petrol }}>efectos en vivo</span>
         </h1>
         <div className="grid grid-cols-2 gap-3">
           <FeatureCardCompact
-            label="Aplicación Principal"
-            description="Controla el ciclo de carga, procesamiento y previsualización de resultados integrado con la API del coordinador."
+            label="Editor de Efectos"
+            description="Sliders de escala de grises, desenfoque y brillo con vista previa en vivo; permite descarga rápida en el cliente o procesamiento distribuido en el clúster."
             color={C.petrol}
             variant="decorated"
           />
           <FeatureCardCompact
             label="Panel de Control"
-            description="Subida de archivos por arrastrar y soltar, configuración de filtros, seguimiento de workers activos con logs y un historial local persistente."
+            description="Subida por arrastrar y soltar, selección de archivo o pegado (Ctrl+V) de imagen o video, y un historial local de tareas recientes."
             color={C.petrol}
             variant="decorated"
           />
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {["Grises 0–1", "Desenfoque 0–20 px", "Brillo 0–3×"].map((s) => (
+            <Badge key={s} label={s} color={C.petrol} />
+          ))}
         </div>
         <div className="flex items-center justify-center gap-3">
           <span className="text-xl font-semibold uppercase tracking-[0.15em] text-gray-500">
             Stack
           </span>
-          {["Astro", "React 19", "Tailwind v4", "shadcn/ui", "Bun", "Biome"].map(
-            (s) => (
-              <Badge key={s} label={s} color={C.petrol} />
-            ),
-          )}
+          {[
+            "Astro",
+            "React 19",
+            "Tailwind v4",
+            "shadcn/ui",
+            "Bun",
+            "Biome",
+          ].map((s) => (
+            <Badge key={s} label={s} color={C.petrol} />
+          ))}
         </div>
       </SlideWrap>
     </Slide>
   );
 }
 
-/* ─── INFRAESTRUCTURA ─── */
+/* ─── INFRAESTRUCTURA (KUBERNETES) ─── */
 function Infrastructure() {
   return (
     <Slide className="h-full">
       <SlideWrap
         color={C.petrol}
-        tag="Infraestructura y Despliegue"
+        tag="Infraestructura · Kubernetes en producción"
         variant="decorated"
         className="w-full flex flex-col gap-3 justify-center"
       >
         <h1 className="text-5xl! font-semibold tracking-tight text-center">
-          De{" "}
-          <span style={{ color: C.petrol }}>Docker Compose</span> a Kubernetes
+          Un clúster{" "}
+          <span style={{ color: C.petrol }}>completo y desplegado</span>
         </h1>
-        <div className="grid grid-cols-2 gap-3">
-          <FeatureCardCompact
-            label="Entorno local"
-            description="Docker Compose orquesta Redis, MinIO, coordinador, reaper y workers, con capacidad de escalar réplicas horizontalmente."
-            color={C.petrol}
-            variant="decorated"
-          />
-          <FeatureCardCompact
-            label="Entorno Kubernetes"
-            description="Manifiestos de red, ingress y certificados, gestionados con Helm charts y Helmfile; secretos cifrados con SOPS."
-            color={C.petrol}
-            variant="decorated"
-          />
-        </div>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-3 gap-2.5">
           {[
-            { v: "100%", l: "Contenerización multi-stage" },
-            { v: "60%", l: "Observabilidad OpenTelemetry" },
-            { v: "50%", l: "Despliegue Kubernetes / Helm" },
-            { v: "40%", l: "Gestión de secretos con SOPS" },
+            {
+              l: "Entornos dev y prod",
+              d: "Namespaces separados, manifiestos gestionados con Kustomize y overlays por entorno.",
+            },
+            {
+              l: "Ingress y TLS",
+              d: "Traefik enruta el tráfico; cert-manager emite certificados Let's Encrypt vía DNS-01 con Cloudflare.",
+            },
+            {
+              l: "DNS automatizado",
+              d: "external-dns sincroniza los registros del dominio con el estado real del clúster.",
+            },
+            {
+              l: "Secretos cifrados",
+              d: "SOPS + age (5 llaves) protege los secretos de cada servicio y de ambos entornos.",
+            },
+            {
+              l: "Observabilidad",
+              d: "Prometheus, Grafana y Node Exporter recolectan y visualizan métricas del clúster.",
+            },
+            {
+              l: "Autoescalado horizontal",
+              d: "Un HorizontalPodAutoscaler ajusta las réplicas del worker según el uso de CPU.",
+            },
           ].map((i) => (
-            <StatCard
+            <FeatureCardCompactSmall
               key={i.l}
-              value={i.v}
               label={i.l}
+              description={i.d}
               color={C.petrol}
-              variant="decorated"
             />
           ))}
+        </div>
+        <div className="grid grid-cols-3 gap-2.5">
+          <StatCard
+            value="2 – 20"
+            label="Réplicas del worker (HPA)"
+            color={C.petrol}
+            variant="decorated"
+          />
+          <StatCard
+            value="70%"
+            label="CPU objetivo por réplica"
+            color={C.petrol}
+            variant="decorated"
+          />
+          <StatCard
+            value="5"
+            label="Llaves age para SOPS"
+            color={C.petrol}
+            variant="decorated"
+          />
         </div>
       </SlideWrap>
     </Slide>
@@ -575,22 +734,26 @@ function Infrastructure() {
 /* ─── EVIDENCIAS ─── */
 function Evidence({
   index,
+  total,
   title,
   highlight,
   desc,
   image,
+  placeholder,
 }: {
   index: number;
+  total: number;
   title: string;
   highlight: string;
   desc: string;
-  image: string;
+  image?: string;
+  placeholder?: string;
 }) {
   return (
     <Slide className="h-full">
       <SlideWrap
         color={C.petrol}
-        tag={`Evidencias · ${index}/5`}
+        tag={`Evidencias · ${index}/${total}`}
         variant="decorated"
         className="w-full flex flex-col gap-2 items-center justify-center"
       >
@@ -605,47 +768,50 @@ function Evidence({
             {desc}
           </p>
         </div>
-        <img
-          src={image}
-          alt={`${title} ${highlight}`}
-          className="object-contain rounded-xl bg-white/95 p-2 shadow-md max-h-[440px]"
-        />
+        {image ? (
+          <img
+            src={image}
+            alt={`${title} ${highlight}`}
+            className="object-contain rounded-xl bg-white/95 p-2 shadow-md max-h-[440px]"
+          />
+        ) : (
+          <ImagePlaceholder label={placeholder ?? ""} />
+        )}
       </SlideWrap>
     </Slide>
   );
 }
 
-/* ─── TRABAJO PENDIENTE ─── */
+/* ─── TRABAJO FUTURO ─── */
 function PendingWork() {
   return (
     <Slide className="h-full">
       <SlideWrap
         color={C.petrol}
-        tag="Trabajo Pendiente · Fase 5"
+        tag="Trabajo Futuro"
         variant="decorated"
         className="w-full flex flex-col gap-3 justify-center items-center"
       >
         <h1 className="text-5xl! font-semibold tracking-tight text-center">
-          Camino al{" "}
-          <span style={{ color: C.petrol }}>cierre del proyecto</span>
+          Camino al <span style={{ color: C.petrol }}>cierre del proyecto</span>
         </h1>
         <div className="grid grid-cols-2 gap-3 self-stretch">
           {[
             {
               l: "Autenticación de usuarios",
-              d: "RF-014 · Registro e inicio de sesión seguro para proteger datos y personalizar el acceso.",
+              d: "Registro e inicio de sesión seguro para proteger datos y personalizar el acceso.",
             },
             {
-              l: "Historial persistente",
-              d: "RF-015 · Almacenamiento del historial de tareas en base de datos, accesible desde cualquier dispositivo.",
+              l: "Autoescalado por profundidad de cola",
+              d: "Extender el HPA actual (basado en CPU) para reaccionar al tamaño real de la cola en Redis, escalando workers según el backlog de tareas y no solo el uso de CPU.",
             },
             {
-              l: "Pruebas automatizadas",
-              d: "RNF-009 · Cobertura de pruebas unitarias e integración sobre los servicios del backend.",
+              l: "Más efectos en el editor",
+              d: "El pipeline de efectos ya encadena filtros: sepia, nitidez, detección de bordes o marca de agua se suman como nuevos pasos, sin tocar la arquitectura del worker.",
             },
             {
-              l: "Validación en clúster real",
-              d: "Despliegue completo en Kubernetes y cierre de la observabilidad con Prometheus y Grafana.",
+              l: "Reensamblado de video con GPU",
+              d: "Acelerar la fase REASSEMBLING con codificación por hardware (ffmpeg + NVENC) para acortar el tiempo de entrega en clips largos.",
             },
           ].map((i) => (
             <FeatureCardTall
@@ -671,16 +837,16 @@ function Conclusions() {
         variant="decorated"
         className="w-full flex flex-col gap-3 justify-center"
       >
-        <h1 className="text-5xl! font-semibold tracking-tight text-center">
+        <h1 className="text-6xl! font-semibold tracking-tight text-center">
           Un pipeline{" "}
           <span style={{ color: C.petrol }}>distribuido y funcional</span>
         </h1>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-4">
           {[
             {
               n: "1",
-              l: "Arquitectura validada",
-              d: "El patrón productor-cola-consumidor con Redis y MinIO ya opera de forma estable en el entorno local.",
+              l: "Arquitectura validada y extendida",
+              d: "El patrón productor-cola-consumidor con Redis y MinIO ahora soporta imagen y video sobre la misma base.",
             },
             {
               n: "2",
@@ -690,12 +856,7 @@ function Conclusions() {
             {
               n: "3",
               l: "Tolerancia a fallos",
-              d: "El reaper y las colas atómicas (BLMOVE, SETNX) garantizan que ninguna tarea se pierda ante una caída.",
-            },
-            {
-              n: "4",
-              l: "Cierre en progreso",
-              d: "Observabilidad, seguridad y pruebas automatizadas son las tareas centrales de la fase final.",
+              d: "El reaper y las colas atómicas (BLMOVE, SETNX) evitan que una tarea se pierda ante una caída.",
             },
           ].map((i) => (
             <div
@@ -720,13 +881,13 @@ function Conclusions() {
           ))}
         </div>
         <p className="text-center text-xl text-gray-400">
-          Microphoto demuestra, con un avance del{" "}
-          <span className="font-semibold text-white">50 %</span>, que el
-          procesamiento distribuido de imágenes es{" "}
+          Según el backlog reportado, Microphoto avanza al{" "}
+          <span className="font-semibold text-white">100 %</span>; el código ya
+          incorpora capacidades no documentadas —
           <span className="font-semibold text-white">
-            viable, resiliente y escalable
+            procesamiento de video y vista previa en vivo
           </span>
-          .
+          — que amplían ese alcance.
         </p>
       </SlideWrap>
     </Slide>
@@ -738,52 +899,28 @@ export function MicrophotoPresentation() {
   return (
     <PresentationDeck config={{ slideNumber: "c/t", transition: "slide" }}>
       <Cover />
-      <Introduction />
-      <Team />
-      <ProjectStatus />
-      <Backlog />
+      <Motivation />
+      <VideoPipeline />
+
+      <RequirementsDivider />
+      <FunctionalRequirements />
+      <NonFunctionalRequirements />
 
       <Architecture />
+      <ImgArchitecture />
       <SequencePart1 />
       <SequencePart2 />
+
       <Backend />
       <Frontend />
-      <Infrastructure />
 
       <Evidence
         index={1}
+        total={1}
         title="Página de inicio"
         highlight="informativa"
         desc="Landing page que explica el problema, el flujo del pipeline y las capacidades de la plataforma."
         image={IMG_EV_LANDING}
-      />
-      <Evidence
-        index={2}
-        title="Configuración"
-        highlight="de filtros y parámetros"
-        desc="Selección de filtro (grayscale, blur, brightness o resize) y sus parámetros antes de enviar la tarea."
-        image={IMG_EV_CONFIG}
-      />
-      <Evidence
-        index={3}
-        title="Procesamiento"
-        highlight="en tiempo real"
-        desc="Progreso general de las fases del pipeline distribuido, actualizado mediante Server-Sent Events."
-        image={IMG_EV_PROGRESS}
-      />
-      <Evidence
-        index={4}
-        title="Detalle"
-        highlight="por nodo worker"
-        desc="Vista expandida con el log individual de cada worker activo procesando sus fragmentos."
-        image={IMG_EV_DETAIL}
-      />
-      <Evidence
-        index={5}
-        title="Resultado"
-        highlight="final"
-        desc="Previsualización de la imagen procesada y reconstruida, con opción de descarga."
-        image={IMG_EV_RESULT}
       />
 
       <PendingWork />
