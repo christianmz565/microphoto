@@ -120,10 +120,13 @@ function WorkerWorkChart({
       <div className="relative rounded border border-zinc-800 bg-black/60 p-3">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
           <title>Rendimiento de trabajo por nodo</title>
-          {yTicks.map((tick) => {
+          {yTicks.map((tick, i) => {
             const y = getY(tick);
             return (
-              <g key={tick}>
+              <g
+                // biome-ignore lint/suspicious/noArrayIndexKey: static ticks
+                key={i}
+              >
                 <line
                   x1={paddingX}
                   y1={y}
@@ -147,13 +150,14 @@ function WorkerWorkChart({
             );
           })}
 
-          {xTicksIndices.map((idx) => {
+          {xTicksIndices.map((idx, i) => {
             const x = getX(idx);
             const dataPoint = chartData[idx];
             if (!dataPoint) return null;
             return (
               <text
-                key={idx}
+                // biome-ignore lint/suspicious/noArrayIndexKey: static ticks
+                key={i}
                 x={x}
                 y={height - paddingY + 16}
                 fill="#9ca3af"

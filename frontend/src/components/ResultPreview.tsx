@@ -1,5 +1,7 @@
 import { IconDownload, IconRefresh } from '@tabler/icons-react';
 
+import { useEffect, useState } from 'react';
+
 import { ProgressTracker } from '@/components/ProgressTracker';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,7 +19,15 @@ export function ResultPreview({
   taskID,
   isVideo,
 }: ResultPreviewProps) {
-  const fileUrl = URL.createObjectURL(resultBlob);
+  const [fileUrl, setFileUrl] = useState<string>('');
+
+  useEffect(() => {
+    const url = URL.createObjectURL(resultBlob);
+    setFileUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [resultBlob]);
 
   const handleDownload = () => {
     const a = document.createElement('a');
@@ -35,22 +45,23 @@ export function ResultPreview({
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-6">
-          {isVideo ? (
-            <video
-              src={fileUrl}
-              className="max-h-80 rounded-lg object-contain shadow-2xl"
-              controls
-              autoPlay
-              loop
-              muted
-            />
-          ) : (
-            <img
-              src={fileUrl}
-              alt="Processed"
-              className="max-h-80 rounded-lg object-contain shadow-2xl"
-            />
-          )}
+          {fileUrl &&
+            (isVideo ? (
+              <video
+                src={fileUrl}
+                className="max-h-80 rounded-lg object-contain shadow-2xl"
+                controls
+                autoPlay
+                loop
+                muted
+              />
+            ) : (
+              <img
+                src={fileUrl}
+                alt="Processed"
+                className="max-h-80 rounded-lg object-contain shadow-2xl"
+              />
+            ))}
           <div className="flex w-full gap-3">
             <Button onClick={handleDownload} className="flex-1">
               <IconDownload className="size-4" />
