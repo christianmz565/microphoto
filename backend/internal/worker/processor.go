@@ -766,57 +766,14 @@ func (p *Processor) ProcessVideoSegment(ctx context.Context, job *jobs.Job, inpu
 		return nil, fmt.Errorf("write temp segment: %w", err)
 	}
 
-	tmpFramesDir := filepath.Join(tmpDir, "frames")
-
-	frames, width, height, fps, err := ExtractFrames(ctx, tmpInputVideo, tmpFramesDir)
+	filterChain, err := buildFFmpegFilterChain(job.Parameters["effects"])
 	if err != nil {
-		return nil, fmt.Errorf("extract segment frames: %w", err)
-	}
-
-	_ = width
-	_ = height
-
-	workerConcurrency := 8
-	if envVal := os.Getenv("WORKER_CONCURRENCY"); envVal != "" {
-		if val, err := strconv.Atoi(envVal); err == nil && val > 0 {
-			workerConcurrency = val
-		}
-	}
-
-	g, gCtx := errgroup.WithContext(ctx)
-	g.SetLimit(workerConcurrency)
-
-	for _, frame := range frames {
-		g.Go(func() error {
-			if gCtx.Err() != nil {
-				return gCtx.Err()
-			}
-
-			frameData, err := os.ReadFile(frame.Path)
-			if err != nil {
-				return fmt.Errorf("read frame %d: %w", frame.Index, err)
-			}
-
-			processed, err := p.applyEffectsPipeline(frameData, job)
-			if err != nil {
-				return fmt.Errorf("process segment frame %d: %w", frame.Index, err)
-			}
-
-			if err := os.WriteFile(frame.Path, processed, 0o644); err != nil {
-				return fmt.Errorf("write processed frame %d: %w", frame.Index, err)
-			}
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build filter chain: %w", err)
 	}
 
 	tmpOutputVideo := filepath.Join(tmpDir, "output.mp4")
-	if err := ReassembleVideo(ctx, tmpFramesDir, tmpOutputVideo, fps); err != nil {
-		return nil, fmt.Errorf("reassemble processed segment: %w", err)
+	if err := ProcessVideoWithFilters(ctx, tmpInputVideo, tmpOutputVideo, filterChain); err != nil {
+		return nil, fmt.Errorf("process video segment: %w", err)
 	}
 
 	outputData, err := os.ReadFile(tmpOutputVideo)
@@ -825,11 +782,6 @@ func (p *Processor) ProcessVideoSegment(ctx context.Context, job *jobs.Job, inpu
 	}
 
 	return outputData, nil
-}
-
-type pipelineEffect struct {
-	Type   string            `json:"type"`
-	Params map[string]string `json:"params"`
 }
 
 func (p *Processor) applyEffectsPipeline(data []byte, job *jobs.Job) ([]byte, error) {

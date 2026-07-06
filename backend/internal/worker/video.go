@@ -3,6 +3,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,49 +12,93 @@ import (
 	"strings"
 )
 
-// FrameInfo holds the path and index of an extracted video frame.
-type FrameInfo struct {
-	Path  string
-	Index int
+type pipelineEffect struct {
+	Type   string            `json:"type"`
+	Params map[string]string `json:"params"`
 }
 
-// ExtractFrames extracts all frames from a video file as JPEG images.
-func ExtractFrames(ctx context.Context, videoPath, outputDir string) ([]FrameInfo, int, int, float64, error) {
-	if err := ensureDir(outputDir); err != nil {
-		return nil, 0, 0, 0, fmt.Errorf("create output dir: %w", err)
+// buildFFmpegFilterChain converts a JSON effects array into an ffmpeg -vf filter chain string.
+func buildFFmpegFilterChain(effectsJSON string) (string, error) {
+	if effectsJSON == "" {
+		return "", nil
 	}
 
-	width, height, fps, err := getVideoMetadata(ctx, videoPath)
-	if err != nil {
-		return nil, 0, 0, 0, fmt.Errorf("get metadata: %w", err)
+	var effects []pipelineEffect
+	if err := json.Unmarshal([]byte(effectsJSON), &effects); err != nil {
+		return "", fmt.Errorf("unmarshal effects: %w", err)
 	}
 
+	var filters []string
+
+	for _, effect := range effects {
+		switch effect.Type {
+		case "GRAYSCALE":
+			filters = append(filters, "hue=s=0")
+		case "BLUR":
+			radius := 1.0
+			if r, err := strconv.ParseFloat(effect.Params["radius"], 64); err == nil {
+				radius = r
+			}
+			filters = append(filters, fmt.Sprintf("gblur=sigma=%.2f", radius))
+		case "BRIGHTNESS":
+			factor := 1.0
+			if f, err := strconv.ParseFloat(effect.Params["factor"], 64); err == nil {
+				factor = f
+			}
+			eqBrightness := (factor - 1.0)
+
+			if eqBrightness < -1.0 {
+				eqBrightness = -1.0
+			}
+
+			if eqBrightness > 1.0 {
+				eqBrightness = 1.0
+			}
+
+			filters = append(filters, fmt.Sprintf("eq=brightness=%.4f", eqBrightness))
+		case "RESIZE":
+			w := effect.Params["width"]
+			h := effect.Params["height"]
+
+			if w != "" && h != "" {
+				filters = append(filters, fmt.Sprintf("scale=%s:%s", w, h))
+			}
+		}
+	}
+
+	if len(filters) == 0 {
+		return "", nil
+	}
+
+	return strings.Join(filters, ","), nil
+}
+
+// ProcessVideoWithFilters applies an ffmpeg filter chain to a video file and writes the result to outputPath.
+func ProcessVideoWithFilters(ctx context.Context, inputPath, outputPath, filterChain string) error {
 	ffmpegThreads := os.Getenv("FFMPEG_THREADS")
 	if ffmpegThreads == "" {
 		ffmpegThreads = "2"
 	}
 
-	pattern := filepath.Join(outputDir, "frame_%06d.jpg")
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-threads", ffmpegThreads, "-i", videoPath, "-q:v", "2", "-fps_mode", "passthrough", pattern)
+	args := []string{"-y", "-threads", ffmpegThreads, "-i", inputPath}
+
+	if filterChain != "" {
+		args = append(args, "-vf", filterChain)
+	}
+
+	args = append(args, "-c:v", "libx264", "-pix_fmt", "yuv420p", outputPath)
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
 	var stderr bytes.Buffer
 
 	cmd.Stderr = &stderr
+
 	if err := cmd.Run(); err != nil {
-		return nil, 0, 0, 0, fmt.Errorf("ffmpeg extract: %w: %s", err, stderr.String())
+		return fmt.Errorf("ffmpeg process: %w: %s", err, stderr.String())
 	}
 
-	matches, err := filepath.Glob(filepath.Join(outputDir, "frame_*.jpg"))
-	if err != nil {
-		return nil, 0, 0, 0, fmt.Errorf("glob frames: %w", err)
-	}
-
-	frames := make([]FrameInfo, len(matches))
-	for i, m := range matches {
-		frames[i] = FrameInfo{Path: m, Index: i}
-	}
-
-	return frames, width, height, fps, nil
+	return nil
 }
 
 func getVideoMetadata(ctx context.Context, videoPath string) (int, int, float64, error) {
@@ -97,33 +142,6 @@ func getVideoMetadata(ctx context.Context, videoPath string) (int, int, float64,
 	}
 
 	return width, height, fps, nil
-}
-
-// ReassembleVideo combines processed frames back into a video.
-func ReassembleVideo(ctx context.Context, frameDir, outputVideoPath string, fps float64) error {
-	pattern := filepath.Join(frameDir, "frame_%06d.jpg")
-
-	ffmpegThreads := os.Getenv("FFMPEG_THREADS")
-	if ffmpegThreads == "" {
-		ffmpegThreads = "1"
-	}
-
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-y",
-		"-threads", ffmpegThreads,
-		"-framerate", fmt.Sprintf("%.3f", fps),
-		"-i", pattern,
-		"-c:v", "libx264",
-		"-pix_fmt", "yuv420p",
-		outputVideoPath)
-
-	var stderr bytes.Buffer
-
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ffmpeg reassemble: %w: %s", err, stderr.String())
-	}
-
-	return nil
 }
 
 func ensureDir(dir string) error {
