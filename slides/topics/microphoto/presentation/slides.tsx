@@ -731,7 +731,6 @@ function Infrastructure() {
   );
 }
 
-/* ─── EVIDENCIAS ─── */
 function Evidence({
   index,
   total,
@@ -755,28 +754,27 @@ function Evidence({
         color={C.petrol}
         tag={`Evidencias · ${index}/${total}`}
         variant="decorated"
-        className="w-full flex flex-col gap-2 items-center justify-center"
+        className="w-full flex items-center justify-center"
       >
-        <div className="flex flex-col items-center">
-          <h1 className="text-4xl! text-balance text-center">
-            {title}{" "}
-            <span className="font-semibold" style={{ color: C.petrol }}>
-              {highlight}
-            </span>
-          </h1>
-          <p className="mt-1 text-xl text-gray-400 text-pretty text-center max-w-4xl">
-            {desc}
-          </p>
+        <div className="grid grid-cols-2 gap-8 w-full items-center text-left px-8">
+          <div className="flex flex-col gap-4">
+            <h1 className="text-4xl! font-semibold tracking-tight leading-tight">
+              {title} <span style={{ color: C.petrol }}>{highlight}</span>
+            </h1>
+            <p className="text-xl text-gray-400 text-pretty">{desc}</p>
+          </div>
+          <div className="flex items-center justify-center">
+            {image ? (
+              <img
+                src={image}
+                alt={`${title} ${highlight}`}
+                className="object-contain rounded-xl bg-white/95 p-2 shadow-md max-h-[440px] w-full"
+              />
+            ) : (
+              <ImagePlaceholder label={placeholder ?? ""} />
+            )}
+          </div>
         </div>
-        {image ? (
-          <img
-            src={image}
-            alt={`${title} ${highlight}`}
-            className="object-contain rounded-xl bg-white/95 p-2 shadow-md max-h-[440px]"
-          />
-        ) : (
-          <ImagePlaceholder label={placeholder ?? ""} />
-        )}
       </SlideWrap>
     </Slide>
   );
