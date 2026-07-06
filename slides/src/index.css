@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+@layer base {
+  /* Reverts a preflight rule on hidden that breaks some reveal.js */
+  [hidden] {
+    display: revert !important;
+  }
+}
