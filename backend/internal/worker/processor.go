@@ -310,6 +310,40 @@ func cropPadding(processed []byte, job *jobs.Job) ([]byte, error) {
 }
 
 func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
+	if job.Parameters["is_segment"] == "true" {
+		if err := p.processVideoSegment(ctx, job); err != nil {
+			return err
+		}
+
+		count, err := p.redis.DecrementCounter(ctx, job.ParentId)
+		if err != nil {
+			return fmt.Errorf("decrement counter: %w", err)
+		}
+
+		totalStr := job.Parameters["total_subtasks"]
+		total, _ := strconv.Atoi(totalStr)
+		completed := total - int(count)
+		progress := 0.10 + (float64(completed)/float64(total))*0.80
+
+		_ = p.redis.PublishProgress(ctx, job.ParentId, model.ProgressPayload{
+			JobID:    job.ParentId,
+			WorkerID: p.workerID,
+			Status:   "PROCESSING",
+			Progress: progress,
+			Message:  fmt.Sprintf("Procesando fragmento %d de %d...", completed, total),
+		})
+
+		log.Printf("Task %s: subtasks remaining: %d", job.ParentId, count)
+
+		if count <= 0 {
+			if err := p.triggerReconstruction(ctx, job); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
 	reader, err := p.minio.DownloadObject(ctx, model.BucketName, job.OriginalImagePath)
 	if err != nil {
 		return fmt.Errorf("download original: %w", err)
@@ -321,23 +355,14 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 		return fmt.Errorf("read fragment: %w", err)
 	}
 
-	var processed []byte
-
-	if job.Parameters["is_segment"] == "true" {
-		processed, err = p.ProcessVideoSegment(ctx, job, buf)
-	} else {
-		processed, err = p.applyEffectsPipeline(buf, job)
-	}
-
+	processed, err := p.applyEffectsPipeline(buf, job)
 	if err != nil {
 		return fmt.Errorf("apply filter: %w", err)
 	}
 
-	if job.Parameters["is_segment"] != "true" {
-		processed, err = cropPadding(processed, job)
-		if err != nil {
-			return fmt.Errorf("crop padding: %w", err)
-		}
+	processed, err = cropPadding(processed, job)
+	if err != nil {
+		return fmt.Errorf("crop padding: %w", err)
 	}
 
 	index := job.Parameters["index"]
@@ -346,11 +371,7 @@ func (p *Processor) handleProcess(ctx context.Context, job *jobs.Job) error {
 
 	mimeType := "image/png"
 
-	if job.Parameters["is_segment"] == "true" {
-		idx, _ := strconv.Atoi(index)
-		resultPath = fmt.Sprintf("%s/res_part_%03d.mp4", job.ParentId, idx)
-		mimeType = "video/mp4"
-	} else if job.Parameters["is_video"] == "true" {
+	if job.Parameters["is_video"] == "true" {
 		idx, _ := strconv.Atoi(index)
 		resultPath = fmt.Sprintf("%s/res_frame_%06d.png", job.ParentId, idx)
 	} else {
@@ -470,7 +491,7 @@ func (p *Processor) handleReconstruct(ctx context.Context, job *jobs.Job) error 
 	subImages := make([]image.Image, totalSubtasks)
 
 	var g errgroup.Group
-	g.SetLimit(totalSubtasks)
+	g.SetLimit(4)
 
 	for i := range totalSubtasks {
 		g.Go(func() error {
@@ -593,14 +614,20 @@ func (p *Processor) handleVideoExtract(ctx context.Context, job *jobs.Job) error
 
 	for i, partPath := range parts {
 		g.Go(func() error {
-			partData, err := os.ReadFile(partPath)
+			partFile, err := os.Open(partPath)
 			if err != nil {
-				return fmt.Errorf("read segment part %d: %w", i, err)
+				return fmt.Errorf("open segment part %d: %w", i, err)
+			}
+			defer partFile.Close()
+
+			partStat, err := partFile.Stat()
+			if err != nil {
+				return fmt.Errorf("stat segment part %d: %w", i, err)
 			}
 
 			partMinioPath := fmt.Sprintf("%s/part_%03d.mp4", job.ParentId, i)
 
-			_, err = p.minio.UploadObject(gCtx, model.BucketName, partMinioPath, bytes.NewReader(partData), int64(len(partData)), "video/mp4")
+			_, err = p.minio.UploadObject(gCtx, model.BucketName, partMinioPath, partFile, partStat.Size(), "video/mp4")
 			if err != nil {
 				return fmt.Errorf("upload segment part %d: %w", i, err)
 			}
@@ -757,34 +784,60 @@ func (p *Processor) handleVideoReassemble(ctx context.Context, job *jobs.Job) er
 	return nil
 }
 
-func (p *Processor) ProcessVideoSegment(ctx context.Context, job *jobs.Job, inputSegmentData []byte) ([]byte, error) {
+func (p *Processor) processVideoSegment(ctx context.Context, job *jobs.Job) error {
 	tmpDir := "/tmp/proc_seg_" + job.Id
 	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create temp dir: %w", err)
+		return fmt.Errorf("create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	tmpInputVideo := filepath.Join(tmpDir, "input.mp4")
-	if err := os.WriteFile(tmpInputVideo, inputSegmentData, 0o644); err != nil {
-		return nil, fmt.Errorf("write temp segment: %w", err)
+	reader, err := p.minio.DownloadObject(ctx, model.BucketName, job.OriginalImagePath)
+	if err != nil {
+		return fmt.Errorf("download segment: %w", err)
 	}
+	defer reader.Close()
+
+	tmpInputVideo := filepath.Join(tmpDir, "input.mp4")
+	tmpFile, err := os.Create(tmpInputVideo)
+	if err != nil {
+		return fmt.Errorf("create temp segment: %w", err)
+	}
+
+	if _, err := io.Copy(tmpFile, reader); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("write temp segment: %w", err)
+	}
+	tmpFile.Close()
 
 	filterChain, err := buildFFmpegFilterChain(job.Parameters["effects"])
 	if err != nil {
-		return nil, fmt.Errorf("build filter chain: %w", err)
+		return fmt.Errorf("build filter chain: %w", err)
 	}
 
 	tmpOutputVideo := filepath.Join(tmpDir, "output.mp4")
 	if err := ProcessVideoWithFilters(ctx, tmpInputVideo, tmpOutputVideo, filterChain); err != nil {
-		return nil, fmt.Errorf("process video segment: %w", err)
+		return fmt.Errorf("process video segment: %w", err)
 	}
 
-	outputData, err := os.ReadFile(tmpOutputVideo)
+	outputFile, err := os.Open(tmpOutputVideo)
 	if err != nil {
-		return nil, fmt.Errorf("read output segment: %w", err)
+		return fmt.Errorf("open output segment: %w", err)
+	}
+	defer outputFile.Close()
+
+	outputStat, err := outputFile.Stat()
+	if err != nil {
+		return fmt.Errorf("stat output segment: %w", err)
 	}
 
-	return outputData, nil
+	idx, _ := strconv.Atoi(job.Parameters["index"])
+	resultPath := fmt.Sprintf("%s/res_part_%03d.mp4", job.ParentId, idx)
+
+	if _, err := p.minio.UploadObject(ctx, model.BucketName, resultPath, outputFile, outputStat.Size(), "video/mp4"); err != nil {
+		return fmt.Errorf("upload processed segment: %w", err)
+	}
+
+	return nil
 }
 
 func (p *Processor) applyEffectsPipeline(data []byte, job *jobs.Job) ([]byte, error) {
