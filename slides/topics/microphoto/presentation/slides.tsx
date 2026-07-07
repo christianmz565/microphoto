@@ -633,7 +633,7 @@ function Frontend() {
           />
         </div>
         <div className="flex flex-wrap items-center justify-center gap-2">
-          {["Grises 0–1", "Desenfoque 0–20 px", "Brillo 0–3×"].map((s) => (
+          {["Grises", "Desenfoque", "Brillo", "Contraste", "Sepia", "Viñeta", "Escala"].map((s) => (
             <Badge key={s} label={s} color={C.petrol} />
           ))}
         </div>
@@ -804,8 +804,8 @@ function PendingWork() {
               d: "Extender el HPA actual (basado en CPU) para reaccionar al tamaño real de la cola en Redis, escalando workers según el backlog de tareas y no solo el uso de CPU.",
             },
             {
-              l: "Más efectos en el editor",
-              d: "El pipeline de efectos ya encadena filtros: sepia, nitidez, detección de bordes o marca de agua se suman como nuevos pasos, sin tocar la arquitectura del worker.",
+              l: "Procesamiento por lotes",
+              d: "Permitir subir múltiples imágenes o videos en una sola tarea, procesándolos en paralelo y entregando los resultados como un paquete comprimido.",
             },
             {
               l: "Reensamblado de video con GPU",

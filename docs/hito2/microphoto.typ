@@ -3,7 +3,7 @@
 #show: ieee.with(
   title: [Microphoto: Plataforma Distribuida de Procesamiento de Imágenes y Video en Kubernetes],
   abstract: [
-    Este artículo presenta Microphoto, una plataforma web distribuida para el procesamiento de imágenes y video que emplea un pipeline de dividir-procesar-reconstruir para paralelizar cargas computacionales en nodos de trabajo heterogéneos. El sistema descompone las imágenes en fragmentos equilibrados por conteo de píxeles, los distribuye mediante una cola de tareas respaldada por Redis, los procesa en paralelo utilizando libvips y reconstruye el resultado final con sincronización basada en contadores atómicos. Microphoto soporta operaciones de conversión a escala de grises, desenfoque gaussiano, ajuste de brillo y redimensionamiento proporcional tanto en imágenes como en video. La plataforma está desplegada en un clúster k3s de 7 nodos con autoescalado basado en HPA (hasta 28 réplicas), entrega de progreso en tiempo real mediante Server-Sent Events y observabilidad a través de Prometheus y Grafana. La evaluación en un clúster heterogéneo demuestra una aceleración casi lineal con el incremento del número de workers, tolerancia a fallos mediante reprogramación automática de tareas y latencia sub-segundo para las actualizaciones de progreso. El sistema está construido con un backend en Go, un frontend Astro 7 con islas de React y payloads de tareas serializados con Protobuf, logrando una arquitectura compacta y eficiente adecuada para despliegues en edge y cloud.
+    Este artículo presenta Microphoto, una plataforma web distribuida para el procesamiento de imágenes y video que emplea un pipeline de dividir-procesar-reconstruir para paralelizar cargas computacionales en nodos de trabajo heterogéneos. El sistema descompone las imágenes en fragmentos equilibrados por conteo de píxeles, los distribuye mediante una cola de tareas respaldada por Redis, los procesa en paralelo utilizando libvips y reconstruye el resultado final con sincronización basada en contadores atómicos. Microphoto soporta operaciones de conversión a escala de grises, desenfoque gaussiano, ajuste de brillo, contraste, efecto sepia, viñeta y redimensionamiento proporcional tanto en imágenes como en video. La plataforma está desplegada en un clúster k3s de 7 nodos con autoescalado basado en HPA (hasta 28 réplicas), entrega de progreso en tiempo real mediante Server-Sent Events y observabilidad a través de Prometheus y Grafana. La evaluación en un clúster heterogéneo demuestra una aceleración casi lineal con el incremento del número de workers, tolerancia a fallos mediante reprogramación automática de tareas y latencia sub-segundo para las actualizaciones de progreso. El sistema está construido con un backend en Go, un frontend Astro 7 con islas de React y payloads de tareas serializados con Protobuf, logrando una arquitectura compacta y eficiente adecuada para despliegues en edge y cloud.
   ],
   index-terms: (
     "computación distribuida",
@@ -183,7 +183,7 @@ message Job {
 }
 ```
 
-Nueve tipos de trabajos definen el ciclo de vida del procesamiento: `SLICE` para la descomposición de imágenes, `GRAYSCALE`, `BLUR`, `BRIGHTNESS` y `RESIZE` para las operaciones de procesamiento, `RECONSTRUCT` para el reensamblaje, y `VIDEO_EXTRACT`, `VIDEO_REASSEMBLE` y el procesamiento individual de segmentos para cargas de video.
+Once tipos de trabajos definen el ciclo de vida del procesamiento: `SLICE` para la descomposición de imágenes, `GRAYSCALE`, `BLUR`, `BRIGHTNESS`, `CONTRAST`, `SEPIA`, `VIGNETTE` y `RESIZE` para las operaciones de procesamiento, `RECONSTRUCT` para el reensamblaje, y `VIDEO_EXTRACT`, `VIDEO_REASSEMBLE` y el procesamiento individual de segmentos para cargas de video.
 
 == Tolerancia a Fallos
 
@@ -197,7 +197,7 @@ Tres mecanismos proporcionan tolerancia a fallos:
 
 == Frontend
 
-El frontend está construido con Astro 7 y islas de React, utilizando Tailwind CSS v4, componentes shadcn/ui y Tabler Icons. Los componentes principales incluyen `ImageUploader` (arrastrar y soltar con validación de 2GB), `ImageEditor` (controles de efectos con vista previa en vivo), `ProgressTracker` (dashboard de procesamiento distribuido en tiempo real) y `ResultPreview` (visualización del resultado final).
+El frontend está construido con Astro 7 y islas de React, utilizando Tailwind CSS v4, componentes shadcn/ui y Tabler Icons. Los componentes principales incluyen `ImageUploader` (arrastrar y soltar con validación de 2GB), `ImageEditor` (controles de efectos con vista previa en vivo: escala de grises, desenfoque, brillo, contraste, sepia, viñeta y redimensionamiento), `ProgressTracker` (dashboard de procesamiento distribuido en tiempo real) y `ResultPreview` (visualización del resultado final).
 
 El hook `useSSE` gestiona las conexiones Server-Sent Events con reintento de backoff exponencial, rastreando el estado por worker y los datos del gráfico del dashboard de procesamiento. La generación de vistas previas utiliza un debounce de 300ms con cancelación mediante `AbortController`, y las imágenes mayores a 5 MB se reducen a 1200px antes de subirlas como vista previa.
 
