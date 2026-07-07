@@ -129,7 +129,7 @@ func ProcessVideoWithFilters(ctx context.Context, inputPath, outputPath, filterC
 		args = append(args, "-vf", filterChain)
 	}
 
-	args = append(args, "-c:v", "libx264", "-pix_fmt", "yuv420p", outputPath)
+	args = append(args, "-c:v", "libx264", "-preset", "fast", "-tune", "zerolatency", "-crf", "28", "-pix_fmt", "yuv420p", outputPath)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
