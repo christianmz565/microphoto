@@ -1,4 +1,4 @@
-#import "@preview/charged-ieee:0.1.4": ieee
+#import "lib.typ": ieee
 
 #show: ieee.with(
   title: [Microphoto: Plataforma Distribuida de Procesamiento de Imágenes y Video en Kubernetes],
@@ -299,3 +299,8 @@ Este artículo presentó Microphoto, una plataforma distribuida de procesamiento
 Las contribuciones técnicas clave incluyen: (1) una estrategia de fragmentación que equilibra la carga de procesamiento al apuntar a un conteo fijo de píxeles por fragmento; (2) un mecanismo de sincronización basado en Redis que combina contadores `DECR` con bloqueos `SetNx` para reconstrucción exactamente-una-vez; (3) un sistema de progreso de doble entrega que combina listas de eventos duraderas con pub/sub en tiempo real; y (4) un despliegue productivo en un clúster k3s heterogéneo de 7 nodos con autoescalado HPA.
 
 El trabajo futuro se enfocará en tres direcciones: (1) procesamiento de fragmentos acelerado por GPU utilizando Workers habilitados con CUDA para filtros computacionalmente intensivos; (2) tamaño de fragmentos adaptativo basado en métricas de rendimiento de workers en tiempo real para optimizar el balanceo de carga; y (3) despliegue multi-región con Workers geo-distribuidos para latencia reducida en escenarios de computación en el borde.
+
+= Disponibilidad de Datos
+
+El código de este proyecto está disponible en #link("https://github.com/christianmz565/microphoto/").
+
