@@ -41,25 +41,25 @@
         devShells.default = pkgs.mkShell {
           LD_LIBRARY_PATH = ldPath;
 
-          packages = with pkgs; [
-            nixd
+          packages = pkgs.lib.flatten [
+            (with pkgs; [
+              go
+              gopls
+              gotools
+              golangci-lint
+              protobuf
+              buf
 
-            go
-            gopls
-            gotools
-            golangci-lint
-            protobuf
-            buf
+              bun
 
-            bun
-
-            just
-            vips
-            pkg-config
-          ]
-          ++ [
-            unstable.typst
-            unstable.tinymist
+              just
+              vips
+              pkg-config
+            ])
+            (with unstable; [
+              typst
+              tinymist
+            ])
           ];
 
           buildInputs = [ pkgs.bashInteractive ];
