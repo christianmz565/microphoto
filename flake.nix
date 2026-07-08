@@ -2,7 +2,8 @@
   description = "A flake";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-26.05";
+    nixpkgs-unstable.url = "github:nixos/nixpkgs?ref=nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -10,6 +11,7 @@
     {
       self,
       nixpkgs,
+      nixpkgs-unstable,
       flake-utils,
       ...
     }:
@@ -17,6 +19,10 @@
       system:
       let
         pkgs = import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        };
+        unstable = import nixpkgs-unstable {
           inherit system;
           config.allowUnfree = true;
         };
@@ -50,9 +56,10 @@
             just
             vips
             pkg-config
-
-            typst
-            tinymist
+          ]
+          ++ [
+            unstable.typst
+            unstable.tinymist
           ];
 
           buildInputs = [ pkgs.bashInteractive ];
