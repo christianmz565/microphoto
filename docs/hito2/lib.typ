@@ -2,7 +2,7 @@
 // it as an article in the style of the IEEE.
 #let ieee(
   // The paper's title.
-  title: [Paper Title],
+  title: [Título del Artículo],
   // An array of authors. For each author you can specify a name,
   // department, organization, location, and email. Everything but
   // but the name is optional.
@@ -37,7 +37,7 @@
   show figure: set place(clearance: 15.5pt)
   show figure.where(kind: table): set figure.caption(position: top, separator: [\ ])
   show figure.where(kind: table): set text(size: 8pt)
-  show figure.where(kind: table): set figure(numbering: "I")
+  show figure.where(kind: table): set figure(supplement: "Tabla", numbering: "I")
   show figure.where(kind: image): set figure(supplement: figure-supplement, numbering: "1")
   show figure.caption: set text(size: 8pt)
   show figure.caption: set align(start)
@@ -48,7 +48,7 @@
   set figure.caption(separator: [. ])
   show figure: fig => {
     let prefix = (
-      if fig.kind == table [TABLA] else if fig.kind == image [Fig.] else [#fig.supplement]
+      if fig.kind == table [TABLA] else if fig.kind == image [#figure-supplement] else [#fig.supplement]
     )
     let numbers = numbering(fig.numbering, ..fig.counter.at(fig.location()))
     // Wrap figure captions in block to prevent the creation of paragraphs. In
