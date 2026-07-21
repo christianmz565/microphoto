@@ -256,7 +256,7 @@ Todo el acceso externo se enruta a través de Traefik con aprovisionamiento auto
 == Observabilidad
 
 #figure(
-  image("img/evidence-grafana.png", width: 100%),
+  image("img/evidence-grafana.png", width: 80%),
   caption: [Dashboard de observabilidad de Grafana monitoreando CPU, carga promedio, swap y RAM en los nodos del clúster.],
 ) <fig:grafana>
 
@@ -271,7 +271,7 @@ La evaluación se realizó en el clúster k3s de 7 nodos descrito en la Sección
 == Rendimiento del Pipeline de Procesamiento
 
 #figure(
-  image("img/evidence-processing.png", width: 100%),
+  image("img/evidence-processing.png", width: 80%),
   caption: [Dashboard de procesamiento distribuido en tiempo real mostrando ejecución paralela multinodal con 95\% de progreso y nodos workers activos.],
 ) <fig:processing>
 
@@ -280,7 +280,7 @@ La @fig:processing muestra el dashboard de procesamiento de Microphoto durante u
 == Interfaz de Usuario
 
 #figure(
-  image("img/evidence-editor.png", width: 100%),
+  image("img/evidence-editor.png", width: 80%),
   caption: [Interfaz del editor de imágenes de Microphoto con controles deslizantes de configuración de filtros para escala de grises, desenfoque y brillo.],
 ) <fig:editor>
 
